@@ -44,6 +44,12 @@ typedef struct sCreationParameters_tag
         READWRITE(withdrawalEpochLength);
     }
     sCreationParameters_tag() :withdrawalEpochLength(-1) {}
+
+    inline bool operator==(const sCreationParameters_tag& rhs) const
+    {
+        return (this->withdrawalEpochLength == rhs.withdrawalEpochLength);
+    }
+    inline bool operator!=(const sCreationParameters_tag& rhs) const { return !(*this == rhs); }
 } ScCreationParameters;
 
 struct CRecipientCrossChainBase
@@ -70,7 +76,7 @@ struct CRecipientForwardTransfer : public CRecipientCrossChainBase
 {
     uint256 address;
     CAmount nValue;
-    explicit CRecipientForwardTransfer(const CTxForwardTransferOut&);
+
     CRecipientForwardTransfer(): nValue(0) {};
 };
 
@@ -88,6 +94,7 @@ typedef boost::variant<
         CRecipientForwardTransfer,
         CRecipientBackwardTransfer
     > CcRecipientVariant;
+
 
 }; // end of namespace
 

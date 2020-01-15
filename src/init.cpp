@@ -525,6 +525,9 @@ std::string HelpMessage(HelpMessageMode mode)
     if (GetBoolArg("-help-debug", false))
         strUsage += HelpMessageOpt("-blockversion=<n>", "Override block version to test forking scenarios");
 
+    strUsage += HelpMessageOpt("-sccoinsmaturity=<n>",
+        "regtest only - Set the maturity of sc funds as number of blocks to be mined before they are computed in the sc balance (default depends on regtest/testnet params)");
+        
 #ifdef ENABLE_MINING
     strUsage += HelpMessageGroup(_("Mining options:"));
     strUsage += HelpMessageOpt("-gen", strprintf(_("Generate coins (default: %u)"), 0));
@@ -1460,7 +1463,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
                 }
 
                 // open sidechain db, read data and populate memory objects
-                if (!Sidechain::ScMgr::instance().initialUpdateFromDb((size_t)nSideChainDBCache, fReindex) )
+                if (!Sidechain::ScMgr::instance().initPersistence((size_t)nSideChainDBCache, fReindex) )
                 {
                     strLoadError = _("Error loading sidechain database");
                     break;

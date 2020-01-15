@@ -73,6 +73,7 @@ class CBlockUndo
 {
 public:
     std::vector<CTxUndo> vtxundo; // for all but the coinbase
+    std::map<uint256, std::map<int, CAmount> > msc_iaundo;
     uint256 old_tree_root;
 
     ADD_SERIALIZE_METHODS;
@@ -80,6 +81,7 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
         READWRITE(vtxundo);
+        READWRITE(msc_iaundo);
         READWRITE(old_tree_root);
     }
 };

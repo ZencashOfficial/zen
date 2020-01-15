@@ -182,6 +182,16 @@ void AddScInfoToJSON(const uint256& scId, const ScInfo& info, UniValue& sc)
     sc.push_back(Pair("created at block height", info.creationBlockHeight));
     // creation parameters
     sc.push_back(Pair("withdrawalEpochLength", info.creationData.withdrawalEpochLength));
+
+    UniValue ia(UniValue::VARR);
+    BOOST_FOREACH(const auto& entry, info.mImmatureAmounts)
+    {
+        UniValue o(UniValue::VOBJ);
+        o.push_back(Pair("maturityHeight", entry.first));
+        o.push_back(Pair("amount", ValueFromAmount(entry.second)));
+        ia.push_back(o);
+    }
+    sc.push_back(Pair("immature amounts", ia));
 }
 
 bool AddScInfoToJSON(const uint256& scId, UniValue& sc)
@@ -199,9 +209,7 @@ bool AddScInfoToJSON(const uint256& scId, UniValue& sc)
 
 void AddScInfoToJSON(UniValue& result)
 {
-    std::set<uint256> sScIds;
-
-    ScMgr::instance().getScIdSet(sScIds);
+    std::set<uint256> sScIds = ScMgr::instance().getScIdSet();
 
     BOOST_FOREACH(const auto& entry, sScIds)
     {
