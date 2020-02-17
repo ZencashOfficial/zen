@@ -318,9 +318,13 @@ static const CRPCCommand vRPCCommands[] =
     /* Raw transactions */
     { "rawtransactions",    "createrawtransaction",   &createrawtransaction,   true  },
     { "rawtransactions",    "decoderawtransaction",   &decoderawtransaction,   true  },
+    { "rawtransactions",    "createrawcertificate",   &createrawcertificate,   true  },
+    { "rawtransactions",    "decoderawcertificate",   &decoderawcertificate,   true  },
     { "rawtransactions",    "decodescript",           &decodescript,           true  },
     { "rawtransactions",    "getrawtransaction",      &getrawtransaction,      true  },
+    { "rawtransactions",    "getrawcertificate",      &getrawcertificate,      true  },
     { "rawtransactions",    "sendrawtransaction",     &sendrawtransaction,     false },
+    { "rawtransactions",    "sendrawcertificate",     &sendrawcertificate,     false },
     { "rawtransactions",    "signrawtransaction",     &signrawtransaction,     false }, /* uses wallet if enabled */
 #ifdef ENABLE_WALLET
     { "rawtransactions",    "fundrawtransaction",     &fundrawtransaction,     false },
@@ -404,6 +408,7 @@ static const CRPCCommand vRPCCommands[] =
     { "wallet",             "z_importviewingkey",     &z_importviewingkey,     true  },
     { "wallet",             "z_exportwallet",         &z_exportwallet,         true  },
     { "wallet",             "z_importwallet",         &z_importwallet,         true  },
+    { "wallet",             "send_certificate",       &send_certificate,       false },
     { "wallet",             "sc_send",                &sc_send ,               false },
     { "wallet",             "sc_sendmany",            &sc_sendmany,            false },
     { "wallet",             "sc_certlock",            &sc_certlock,            false },

@@ -19,10 +19,13 @@ class CLevelDBWrapper;
 namespace Sidechain
 {
 
+static const int EPOCH_NULL = -1;
+
 class ScInfo
 {
 public:
-    ScInfo() : creationBlockHash(), creationBlockHeight(-1), creationTxHash(), balance(0) {}
+    ScInfo() : creationBlockHash(), creationBlockHeight(-1), creationTxHash(),
+         lastReceivedCertificateEpoch(EPOCH_NULL), balance(0) {}
     
     // reference to the block containing the tx that created the side chain 
     uint256 creationBlockHash;
@@ -32,6 +35,9 @@ public:
 
     // hash of the tx who created it
     uint256 creationTxHash;
+
+    // last epoch where a certificate has been received
+    int lastReceivedCertificateEpoch;
 
     // total amount given by sum(fw transfer)-sum(bkw transfer)
     CAmount balance;
@@ -54,6 +60,7 @@ public:
         READWRITE(creationBlockHash);
         READWRITE(creationBlockHeight);
         READWRITE(creationTxHash);
+        READWRITE(lastReceivedCertificateEpoch);
         READWRITE(balance);
         READWRITE(creationData);
         READWRITE(mImmatureAmounts);
@@ -61,11 +68,12 @@ public:
 
     inline bool operator==(const ScInfo& rhs) const
     {
-        return (this->creationBlockHash   == rhs.creationBlockHash)   &&
-               (this->creationBlockHeight == rhs.creationBlockHeight) &&
-               (this->creationTxHash      == rhs.creationTxHash)      &&
-               (this->creationData        == rhs.creationData)        &&
-               (this->mImmatureAmounts    == rhs.mImmatureAmounts);
+        return (this->creationBlockHash            == rhs.creationBlockHash)   &&
+               (this->creationBlockHeight          == rhs.creationBlockHeight) &&
+               (this->creationTxHash               == rhs.creationTxHash)      &&
+               (this->lastReceivedCertificateEpoch == rhs.lastReceivedCertificateEpoch)      &&
+               (this->creationData                 == rhs.creationData)        &&
+               (this->mImmatureAmounts             == rhs.mImmatureAmounts);
     }
     inline bool operator!=(const ScInfo& rhs) const { return !(*this == rhs); }
 };
@@ -81,12 +89,19 @@ public:
     virtual ~ScCoinsView() = default;
 
     static bool checkTxSemanticValidity(const CTransaction& tx, CValidationState& state);
+    static bool checkCertSemanticValidity(const CScCertificate& cert, CValidationState& state);
+
     static bool IsTxAllowedInMempool(const CTxMemPool& pool, const CTransaction& tx, CValidationState& state);
+    static bool IsCertAllowedInMempool(const CTxMemPool& pool, const CScCertificate& cert, CValidationState& state);
+    static void getScCreationChildrenInMempool(const CTransaction& tx, const CTxMemPool& pool, std::deque<uint256>& outTxList);
     bool IsTxApplicableToState(const CTransaction& tx);
+    bool IsCertApplicableToState(const CScCertificate& cert);
 
     virtual bool sidechainExists(const uint256& scId) const = 0;
     virtual bool getScInfo(const uint256& scId, ScInfo& info) const = 0;
     virtual std::set<uint256> getScIdSet() const = 0;
+    virtual CAmount getSidechainBalance(const uint256& scId) const = 0;
+    virtual CAmount getSidechainBalanceImmature(const uint256& scId) const = 0;
 
 protected:
     static bool hasScCreationOutput(const CTransaction& tx, const uint256& scId); // return true if the tx is creating the scid
@@ -102,11 +117,16 @@ public:
     bool sidechainExists(const uint256& scId) const;
     bool getScInfo(const uint256 & scId, ScInfo& targetScInfo) const;
     std::set<uint256> getScIdSet() const;
+    CAmount getSidechainBalance(const uint256& scId) const;
+    CAmount getSidechainBalanceImmature(const uint256& scId) const;
     bool UpdateScInfo(const CTransaction& tx, const CBlock&, int nHeight);
+    bool UpdateScInfo(const CScCertificate& cert, CBlockUndo& bu);
 
     bool RevertTxOutputs(const CTransaction& tx, int nHeight);
+    bool RevertCertOutputs(const CScCertificate& cert, int nHeight);
     bool ApplyMatureBalances(int nHeight, CBlockUndo& blockundo);
     bool RestoreImmatureBalances(int nHeight, const CBlockUndo& blockundo);
+    bool checkCertificateInMemPool(const CTxMemPool& pool, const CScCertificate& cert);
 
     bool Flush();
 
@@ -139,6 +159,12 @@ public:
     bool sidechainExists(const uint256& scId) const;
     bool getScInfo(const uint256& scId, ScInfo& info) const;
     std::set<uint256> getScIdSet() const;
+    CAmount getSidechainBalance(const uint256& scId) const;
+    CAmount getSidechainBalanceImmature(const uint256& scId) const;
+
+    static bool isLegalEpoch(const uint256& scId, int epochNumber, const uint256& epochBlockHash);
+    static int getCertificateMaxIncomingHeight(const uint256& scId, int epochNumber);
+    static bool epochAlreadyHasCertificate(const uint256& scId, int epochNumber, const CTxMemPool& pool, uint256& certHash);
 
     // print functions
     bool dump_info(const uint256& scId);
@@ -150,7 +176,7 @@ private:
     ~ScMgr() { reset(); }
 
     mutable CCriticalSection sc_lock;
-    ScInfoMap ManagerScInfoMap;
+    ScInfoMap mManagerScInfoMap;
     PersistenceLayer * pLayer;
 
     bool loadInitialData();

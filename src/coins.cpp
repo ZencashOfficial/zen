@@ -433,6 +433,8 @@ bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
             const COutPoint &prevout = tx.vin[i].prevout;
             const CCoins* coins = AccessCoins(prevout.hash);
             if (!coins || !coins->IsAvailable(prevout.n)) {
+//                LogPrintf("%s():%d - ERROR: tx[%s]: input missing/spent: %d / %s\n",
+//                   __func__, __LINE__, tx.GetHash().ToString(), prevout.n, prevout.hash.ToString());
                 return false;
             }
         }
@@ -452,7 +454,7 @@ double CCoinsViewCache::GetPriority(const CTransaction &tx, int nHeight) const
     // FIXME: this logic is partially duplicated between here and CreateNewBlock in miner.cpp.
 
     if (tx.vjoinsplit.size() > 0) {
-        return MAX_PRIORITY;
+        return MAXIMUM_PRIORITY;
     }
 
     double dResult = 0.0;

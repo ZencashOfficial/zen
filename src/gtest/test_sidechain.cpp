@@ -314,7 +314,7 @@ TEST_F(SidechainTestSuite, DuplicatedScCreationTxsAreNotAllowedInMemPool) {
     CValidationState txState;
 
     //test
-    bool res = sidechainManager.IsTxAllowedInMempool(aMemPool, aTransaction, txState);
+    bool res = sidechainManager.IsTxAllowedInMempool(aMemPool, duplicatedTx, txState);
 
     //check
     EXPECT_FALSE(res);
@@ -866,9 +866,16 @@ void  SidechainTestSuite::appendTxTo(CTransaction & tx, const uint256 & scId, co
 CBlockUndo SidechainTestSuite::createBlockUndoWith(const uint256 & scId, int height, CAmount amount)
 {
     CBlockUndo retVal;
+#if 0
     std::map<int, CAmount> AmountPerHeight;
     AmountPerHeight[height] = amount;
-    retVal.msc_iaundo[scId] = AmountPerHeight;
+#else
+    CAmount AmountPerHeight = amount;
+#endif
+    ScUndoData data;
+    data.immAmount = AmountPerHeight;
+    data.certEpoch = Sidechain::EPOCH_NULL;
+    retVal.msc_iaundo[scId] = data;
 
     return retVal;
 }
