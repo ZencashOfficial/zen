@@ -179,7 +179,6 @@ bool CWallet::AddKeyPubKey(const CKey& secret, const CPubKey &pubkey)
 bool CWallet::AddCryptedKey(const CPubKey &vchPubKey,
                             const vector<unsigned char> &vchCryptedSecret)
 {
-    
     if (!CCryptoKeyStore::AddCryptedKey(vchPubKey, vchCryptedSecret))
         return false;
     if (!fFileBacked)
@@ -519,7 +518,6 @@ bool CWallet::Verify(const string& walletFile, string& warningString, string& er
         } catch (const boost::filesystem::filesystem_error&) {
             // failure is ok (well, not really, but it's not worse than what we started with)
         }
-        
         // try again
         if (!bitdb.Open(GetDataDir())) {
             // if it still fails, it probably means we can't even create the database env
@@ -528,14 +526,12 @@ bool CWallet::Verify(const string& walletFile, string& warningString, string& er
             return true;
         }
     }
-    
     if (GetBoolArg("-salvagewallet", false))
     {
         // Recover readable keypairs:
         if (!CWalletDB::Recover(bitdb, walletFile, true))
             return false;
     }
-    
     if (boost::filesystem::exists(GetDataDir() / walletFile))
     {
         CDBEnv::VerifyResult r = bitdb.Verify(walletFile, CWalletDB::Recover);
@@ -549,7 +545,6 @@ bool CWallet::Verify(const string& walletFile, string& warningString, string& er
         if (r == CDBEnv::RECOVER_FAIL)
             errorString += _("wallet.dat corrupt, salvage failed");
     }
-    
     return true;
 }
 
@@ -953,25 +948,75 @@ int64_t CWallet::IncOrderPosNext(CWalletDB *pwalletdb)
     return nRet;
 }
 
-CWallet::TxItems CWallet::OrderedTxItems(std::list<CAccountingEntry>& acentries, std::string strAccount)
+CWallet::TxItems CWallet::OrderedTxItems(std::list<CAccountingEntry>& acentries, const std::string& strAccount,const std::string& address, bool includeFilteredVin)
 {
     AssertLockHeld(cs_wallet); // mapWallet
     CWalletDB walletdb(strWalletFile);
+
+    CScript scriptPubKey;
+    bool noFilter=address==std::string("*");
+    if(!noFilter) {
+         CBitcoinAddress baddress = CBitcoinAddress(address);
+         scriptPubKey = GetScriptForDestination(baddress.Get(), false);
+    }
 
     // First: get all CWalletTx and CAccountingEntry into a sorted-by-order multimap.
     TxItems txOrdered;
 
     // Note: maintaining indices in the database of (account,time) --> txid and (account, time) --> acentry
     // would make this much faster for applications that do this a lot.
-    for (map<uint256, CWalletTx>::iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
-    {
+    for (map<uint256, CWalletTx>::iterator it = mapWallet.begin(); it != mapWallet.end(); ++it) {
         CWalletTx* wtx = &((*it).second);
-        txOrdered.insert(make_pair(wtx->nOrderPos, TxPair(wtx, (CAccountingEntry*)0)));
+        if(noFilter)
+            txOrdered.insert(make_pair(wtx->nOrderPos, TxPair(wtx, (CAccountingEntry*)0)));
+        else
+        {
+            // search in the tx outputs
+            bool outputFound = false;
+
+            for(const CTxOut& txout : wtx->vout) {
+                auto res = std::search(txout.scriptPubKey.begin(), txout.scriptPubKey.end(), scriptPubKey.begin(), scriptPubKey.end());
+                if (res == txout.scriptPubKey.begin()) {
+                    txOrdered.insert(make_pair(wtx->nOrderPos, TxPair(wtx, (CAccountingEntry*)0)));
+                    outputFound = true;
+                    break;
+                }
+            }
+
+            if (includeFilteredVin && !wtx->IsCoinBase() && !outputFound)
+            {
+                // found no output related to filtering address, check in the tx inputs
+                for(const CTxIn& txin: wtx->vin)
+                {
+                    // here we consider only input tx from this wallet; if also generic senders are to be considered
+                    // use must be made of CCoinsViewCache
+                    map<uint256, CWalletTx>::const_iterator mi = mapWallet.find(txin.prevout.hash);
+                    if (mi == mapWallet.end())
+                    {
+                        continue;
+                    }
+
+                    const CWalletTx& inputTx = (*mi).second;
+                    if (txin.prevout.n >= inputTx.vout.size())
+                    {
+                        continue;
+                    }
+
+                    const CTxOut& utxo = inputTx.vout[txin.prevout.n];
+ 
+                    auto res = std::search(utxo.scriptPubKey.begin(), utxo.scriptPubKey.end(), scriptPubKey.begin(), scriptPubKey.end());
+                    if (res == utxo.scriptPubKey.begin()) {
+                        txOrdered.insert(make_pair(wtx->nOrderPos, TxPair(wtx, (CAccountingEntry*)0)));
+                        break;
+                    }
+                }
+            }
+        }
     }
+
     acentries.clear();
     walletdb.ListAccountCreditDebit(strAccount, acentries);
-    BOOST_FOREACH(CAccountingEntry& entry, acentries)
-    {
+    BOOST_FOREACH(CAccountingEntry& entry, acentries) {
         txOrdered.insert(make_pair(entry.nOrderPos, TxPair((CWalletTx*)0, &entry)));
     }
 
@@ -2723,26 +2768,7 @@ bool CWallet::CreateTransaction(
                 }
 
                 // vccouts to the payees
-                BOOST_FOREACH (const auto& ccRecipient, vecCcSend)
-                {
-                    CRecipientFactory fac(&txNew, strFailReason);
-                    if (!fac.set(ccRecipient) )
-                    {
-                        return false;
-                    }
-                }
-
-/*
- * this check has moved before adding to mem pool
- *
- *              // if this tx creates a sc, check that no other tx are doing the same in the mempool
- *              CValidationState state;
- *              if (!ScMgr::instance().IsTxAllowedInMempool(mempool, txNew, state) )
- *              {
- *                  strFailReason = _("Sc already created by a tx in mempool");
- *                  return false;
- *              }
- */
+                Sidechain::FillCcOutput(txNew, vecCcSend, strFailReason);
 
                 // Choose coins to use
                 set<pair<const CWalletTx*,unsigned int> > setCoins;
@@ -3823,51 +3849,4 @@ void CWallet::GetFilteredNotes(std::vector<CNotePlaintextEntry> & outEntries, st
         }
     }
 }
-
-//--------------------------------------------------------------------------------------------
-// Cross chain outputs
-
-template <typename T>
-bool CcRecipientVisitor::operator() (const T& r) const { return fact->set(r); }
-
-bool CRecipientFactory::set(const CRecipientScCreation& r)
-{
-    CTxScCreationOut txccout(r.scId, r.creationData.withdrawalEpochLength);
-    // no dust can be found in sc creation
-    tx->vsc_ccout.push_back(txccout);
-    return true;
-};
-
-bool CRecipientFactory::set(const CRecipientCertLock& r)
-{
-    CTxCertifierLockOut txccout(r.nValue, r.address, r.scId, r.epoch);
-    if (txccout.IsDust(::minRelayTxFee))
-    {
-        err = _("Transaction amount too small");
-        return false;
-    }
-    tx->vcl_ccout.push_back(txccout);
-    return true;
-};
-
-bool CRecipientFactory::set(const CRecipientForwardTransfer& r)
-{
-    CTxForwardTransferOut txccout(r.nValue, r.address, r.scId);
-    if (txccout.IsDust(::minRelayTxFee))
-    {
-        err = _("Transaction amount too small");
-        return false;
-    }
-    tx->vft_ccout.push_back(txccout);
-    return true;
-};
-
-bool CRecipientFactory::set(const CRecipientBackwardTransfer& r)
-{
-    // fill vout here but later their amount will be reduced carving out the fee by the caller
-    CTxOut txout(r.nValue, r.scriptPubKey);
-
-    tx->vout.push_back(txout);
-    return true;
-};
 

@@ -1332,6 +1332,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     // a not existing one and so on
     if (!scMgr.IsTxApplicableToState(tx) )
     {
+        LogPrint("sc", "%s():%d - tx [%s] is not applicable\n", __func__, __LINE__, hash.ToString());
         return false;
     }
     LogPrint("sc", "%s():%d - tx [%s] is applicable\n", __func__, __LINE__, hash.ToString());
@@ -1361,6 +1362,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         // If this tx creates a sc, no other tx must be doing the same in the mempool
         if (!scMgr.IsTxAllowedInMempool(pool, tx, state) )
         {
+            LogPrint("sc", "%s():%d - tx [%s] has conflicts in mempool\n", __func__, __LINE__, hash.ToString());
             return false;
         }
         LogPrint("sc", "%s():%d - tx [%s] has no conflicts in mempool\n", __func__, __LINE__, hash.ToString());
