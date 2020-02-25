@@ -90,7 +90,6 @@ void CTxMemPool::AddTransactionsUpdated(unsigned int n)
     nTransactionsUpdated += n;
 }
 
-
 bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, bool fCurrentEstimate)
 {
     // Add to memory pool without checking anything.
@@ -99,13 +98,24 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
     LOCK(cs);
     mapTx[hash] = entry;
     const CTransaction& tx = mapTx[hash].GetTx();
-        for (unsigned int i = 0; i < tx.vin.size(); i++)
-            mapNextTx[tx.vin[i].prevout] = CInPoint(&tx, i);
-    BOOST_FOREACH(const JSDescription &joinsplit, tx.vjoinsplit) {
-        BOOST_FOREACH(const uint256 &nf, joinsplit.nullifiers) {
+    for (unsigned int i = 0; i < tx.vin.size(); i++)
+        mapNextTx[tx.vin[i].prevout] = CInPoint(&tx, i);
+
+    for(const JSDescription &joinsplit: tx.vjoinsplit) {
+        for(const uint256 &nf: joinsplit.nullifiers) {
             mapNullifiers[nf] = &tx;
         }
     }
+
+    for(const auto& sc: tx.vsc_ccout) {
+        assert(mapSidechains[sc.scId].scCreationTxHash.IsNull());
+        mapSidechains[sc.scId].scCreationTxHash = hash;
+    }
+
+    for(const auto& fwd: tx.vft_ccout) {
+        mapSidechains[fwd.scId].fwdTransfersSet.insert(hash);
+    }
+
     nTransactionsUpdated++;
     totalTxSize += entry.GetTxSize();
     cachedInnerUsage += entry.DynamicMemoryUsage();
@@ -115,13 +125,14 @@ bool CTxMemPool::addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry,
 }
 
 
-void CTxMemPool::remove(const CTransaction &origTx, std::list<CTransaction>& removed, bool fRecursive)
+void CTxMemPool::remove(const CTransaction &origTx, std::list<CTransaction>& removed, bool fRecursive,  bool removeDependantFwds)
 {
     // Remove transaction from memory pool
     {
         LOCK(cs);
         std::deque<uint256> txToRemove;
         txToRemove.push_back(origTx.GetHash());
+
         if (fRecursive && !mapTx.count(origTx.GetHash())) {
             // If recursively removing but origTx isn't in the mempool
             // be sure to remove any children that are in the pool. This can
@@ -133,13 +144,26 @@ void CTxMemPool::remove(const CTransaction &origTx, std::list<CTransaction>& rem
                     continue;
                 txToRemove.push_back(it->second.ptx->GetHash());
             }
+
+            for(const auto& sc: origTx.vsc_ccout) {
+                if (mapSidechains.count(sc.scId) == 0)
+                    continue;
+
+                if (removeDependantFwds) {
+                    for(const auto& fwdTxHash : mapSidechains.at(sc.scId).fwdTransfersSet)
+                        txToRemove.push_back(fwdTxHash);
+                } else
+                    txToRemove.push_back(mapSidechains.at(sc.scId).scCreationTxHash);
+            }
         }
+
         while (!txToRemove.empty())
         {
             uint256 hash = txToRemove.front();
             txToRemove.pop_front();
             if (!mapTx.count(hash))
                 continue;
+
             const CTransaction& tx = mapTx[hash].GetTx();
             if (fRecursive) {
                 for (unsigned int i = 0; i < tx.vout.size(); i++) {
@@ -148,14 +172,42 @@ void CTxMemPool::remove(const CTransaction &origTx, std::list<CTransaction>& rem
                         continue;
                     txToRemove.push_back(it->second.ptx->GetHash());
                 }
-            }
-            BOOST_FOREACH(const CTxIn& txin, tx.vin)
-                mapNextTx.erase(txin.prevout);
-            BOOST_FOREACH(const JSDescription& joinsplit, tx.vjoinsplit) {
-                BOOST_FOREACH(const uint256& nf, joinsplit.nullifiers) {
-                    mapNullifiers.erase(nf);
+
+                for(const auto& sc: tx.vsc_ccout) {
+                    if (mapSidechains.count(sc.scId) == 0)
+                        continue;
+
+                    if (removeDependantFwds) {
+                        for(const auto& fwdTxHash : mapSidechains.at(sc.scId).fwdTransfersSet)
+                            txToRemove.push_back(fwdTxHash);
+                    } else
+                        txToRemove.push_back(mapSidechains.at(sc.scId).scCreationTxHash);
                 }
             }
+
+            for(const CTxIn& txin: tx.vin)
+                mapNextTx.erase(txin.prevout);
+
+            for(const auto& fwd: tx.vft_ccout) {
+                if (mapSidechains.count(fwd.scId)) { //Guard against double-delete on multiple fwds toward the same sc in same tx
+                    mapSidechains.at(fwd.scId).fwdTransfersSet.erase(tx.GetHash());
+
+                    if (mapSidechains.at(fwd.scId).fwdTransfersSet.size() == 0 && mapSidechains.at(fwd.scId).scCreationTxHash.IsNull())
+                        mapSidechains.erase(fwd.scId);
+                }
+            }
+
+            for(const auto& sc: tx.vsc_ccout) {
+                assert(mapSidechains.count(sc.scId) != 0);
+                mapSidechains.at(sc.scId).scCreationTxHash.SetNull();
+
+                if (mapSidechains.at(sc.scId).fwdTransfersSet.size() == 0)
+                    mapSidechains.erase(sc.scId);
+            }
+
+            for(const JSDescription& joinsplit: tx.vjoinsplit)
+                for(const uint256& nf: joinsplit.nullifiers)
+                    mapNullifiers.erase(nf);
 
             removed.push_back(tx);
             totalTxSize -= mapTx[hash].GetTxSize();
@@ -246,6 +298,14 @@ void CTxMemPool::removeConflicts(const CTransaction &tx, std::list<CTransaction>
             }
         }
     }
+
+    for(const auto& sc: tx.vsc_ccout) {
+        if(sidechainExists(sc.scId)) {
+            const uint256& scRedeclarationHash = mapSidechains[sc.scId].scCreationTxHash;
+            const CTransaction &scReDeclarationTx = mapTx[scRedeclarationHash].GetTx();
+            remove(scReDeclarationTx, removed, /*fRecursive*/true, /*removeDependantFwds*/false);
+        }
+    }
 }
 
 /**
@@ -278,6 +338,7 @@ void CTxMemPool::clear()
     LOCK(cs);
     mapTx.clear();
     mapNextTx.clear();
+    mapSidechains.clear();
     totalTxSize = 0;
     cachedInnerUsage = 0;
     ++nTransactionsUpdated;
@@ -320,6 +381,28 @@ void CTxMemPool::check(const CCoinsViewCache *pcoins) const
             assert(it3->second.ptx == &tx);
             assert(it3->second.n == i);
             i++;
+        }
+
+        for(const auto& scCreation : tx.vsc_ccout) {
+            //sc creation must be duly recorded in mapSidechain
+            assert(mapSidechains.count(scCreation.scId) != 0);
+            assert(mapSidechains.at(scCreation.scId).scCreationTxHash == tx.GetHash());
+
+            //since sc creation is in mempool, there must not be in blockchain another sc re-declaring it
+            assert(!pcoins->HaveScInfo(scCreation.scId));
+        }
+
+        for(const auto& fwd: tx.vft_ccout) {
+            //fwd must be duly recorded in mapSidechain
+            assert(mapSidechains.count(fwd.scId) != 0);
+            const auto& fwdPos = mapSidechains.at(fwd.scId).fwdTransfersSet.find(tx.GetHash());
+            assert(fwdPos != mapSidechains.at(fwd.scId).fwdTransfersSet.end());
+
+            //there must be no dangling fwds, i.e. sc creation is either in mempool or in blockchain
+            if (!mapSidechains.at(fwd.scId).scCreationTxHash.IsNull())
+                assert(mapTx.count(mapSidechains.at(fwd.scId).scCreationTxHash));
+            else
+                assert(pcoins->HaveScInfo(fwd.scId));
         }
 
         boost::unordered_map<uint256, ZCIncrementalMerkleTree, CCoinsKeyHasher> intermediates;
@@ -513,6 +596,36 @@ bool CCoinsViewMemPool::GetCoins(const uint256 &txid, CCoins &coins) const {
 
 bool CCoinsViewMemPool::HaveCoins(const uint256 &txid) const {
     return mempool.exists(txid) || base->HaveCoins(txid);
+}
+
+bool CCoinsViewMemPool::GetScInfo(const uint256& scId, ScInfo& info) const {
+    if (mempool.sidechainExists(scId)) {
+        //build ScInfo from txs in mempool
+        const uint256& scCreationHash = mempool.mapSidechains.at(scId).scCreationTxHash;
+        const CTransaction & scCreationTx = mempool.mapTx.at(scCreationHash).GetTx();
+        for (const auto& scCreation : scCreationTx.vsc_ccout)
+            if (scId == scCreation.scId) {
+                //info.creationBlockHash doesn't exist here!
+                info.creationBlockHeight = -1; //default null value for creationBlockHeight
+                info.creationTxHash = scCreationHash;
+                info.creationData.withdrawalEpochLength = scCreation.withdrawalEpochLength;
+            }
+
+        //construct immature amount infos
+        for (const auto& fwdHash: mempool.mapSidechains.at(scId).fwdTransfersSet) {
+            const CTransaction & fwdTx = mempool.mapTx.at(fwdHash).GetTx();
+            for (const auto& fwdAmount : fwdTx.vft_ccout)
+                if (scId == fwdAmount.scId)
+                    info.mImmatureAmounts[-1] += fwdAmount.nValue;
+        }
+        return true;
+    }
+
+    return base->GetScInfo(scId, info);
+}
+
+bool CCoinsViewMemPool::HaveScInfo(const uint256& scId) const {
+    return mempool.sidechainExists(scId) || base->HaveScInfo(scId);
 }
 
 size_t CTxMemPool::DynamicMemoryUsage() const {

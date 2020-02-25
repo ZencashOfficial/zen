@@ -22,6 +22,7 @@
 
 #include <regex>
 
+#include <init.h>
 #include "sc/sidechain.h"
 #include "sc/sidechainrpc.h"
 
@@ -1053,7 +1054,8 @@ UniValue getscgenesisinfo(const UniValue& params, bool fHelp)
     scId.SetHex(inputString);
  
     // sanity check of the side chain ID
-    if (!ScMgr::instance().sidechainExists(scId) )
+    CCoinsViewCache scView(pcoinsTip);
+    if (!scView.HaveScInfo(scId) )
     {
         LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
         throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
@@ -1061,7 +1063,7 @@ UniValue getscgenesisinfo(const UniValue& params, bool fHelp)
 
     // find the block where it has been created
     ScInfo info;
-    if (!ScMgr::instance().getScInfo(scId, info) )
+    if (!scView.GetScInfo(scId, info) )
     {
         LogPrint("sc", "cound not get info for scid[%s], probably not yet created\n", scId.ToString() );
         throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
@@ -1126,7 +1128,6 @@ UniValue getscgenesisinfo(const UniValue& params, bool fHelp)
 
     std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
     return strHex;
-   
 }
 
 UniValue getblockfinalityindex(const UniValue& params, bool fHelp)

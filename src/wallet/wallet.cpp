@@ -28,8 +28,6 @@ using namespace zen;
 #include <boost/filesystem.hpp>
 #include <boost/thread.hpp>
 
-#include "sc/sidechain.h"
-
 using namespace std;
 using namespace libzcash;
 using namespace Sidechain;
@@ -2737,7 +2735,7 @@ bool CWallet::CreateTransaction(
  *
  *              // if this tx creates a sc, check that no other tx are doing the same in the mempool
  *              CValidationState state;
- *              if (!ScMgr::instance().IsTxAllowedInMempool(mempool, txNew, state) )
+ *              if (!Sidechain::existsInMempool(mempool, txNew, state) )
  *              {
  *                  strFailReason = _("Sc already created by a tx in mempool");
  *                  return false;

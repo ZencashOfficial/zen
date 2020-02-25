@@ -36,7 +36,6 @@
 
 #include <numeric>
 
-#include "sc/sidechain.h"
 #include "sc/sidechainrpc.h"
 
 using namespace std;
@@ -547,12 +546,16 @@ UniValue sc_send(const UniValue& params, bool fHelp)
     uint256 scId;
     scId.SetHex(inputString);
 
-    // sanity check of the side chain ID
-    if (!ScMgr::instance().sidechainExists(scId) )
     {
-        LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
-        throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
+        LOCK(mempool.cs);
+        CCoinsViewMemPool scView(pcoinsTip, mempool);
+        if (!scView.HaveScInfo(scId) )
+        {
+            LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
+            throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
+        }
     }
+
 
 
     // Wallet comments
@@ -695,7 +698,8 @@ UniValue sc_create(const UniValue& params, bool fHelp)
     scId.SetHex(inputString);
 
     // sanity check of the side chain ID
-    if (ScMgr::instance().sidechainExists(scId) )
+    CCoinsViewCache scView(pcoinsTip);
+    if (scView.HaveScInfo(scId) )
     {
         LogPrint("sc", "scid[%s] already created\n", scId.ToString() );
         throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid already created: ") + scId.ToString());
@@ -3958,11 +3962,14 @@ UniValue sc_sendmany(const UniValue& params, bool fHelp)
         uint256 scId;
         scId.SetHex(inputString);
 
-        // scid must already been created
-        if (!ScMgr::instance().sidechainExists(scId) )
         {
-            LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
-            throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
+            LOCK(mempool.cs);
+            CCoinsViewMemPool scView(pcoinsTip, mempool);
+            if (!scView.HaveScInfo(scId) )
+            {
+                LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
+                throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());
+            }
         }
 
         CRecipientForwardTransfer ft;
@@ -4060,7 +4067,8 @@ UniValue sc_certlock_many(const UniValue& params, bool fHelp)
         uint256 scId;
         scId.SetHex(inputString);
 
-        if (!ScMgr::instance().sidechainExists(scId) )
+        CCoinsViewCache scView(pcoinsTip);
+        if (!scView.HaveScInfo(scId) )
         {
             LogPrint("sc", "scid[%s] not yet created\n", scId.ToString() );
             throw JSONRPCError(RPC_INVALID_PARAMETER, string("scid not yet created: ") + scId.ToString());

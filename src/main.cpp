@@ -53,8 +53,6 @@ using namespace std;
 # error "Zen cannot be compiled without assertions."
 #endif
 
-static Sidechain::ScMgr& scMgr = Sidechain::ScMgr::instance();
-
 /**
  * Global state
  */
@@ -322,8 +320,8 @@ CNodeState *State(NodeId pnode) {
 }
 
 bool IsStartupSyncing() {
-	LOCK(cs_main);
-	return fIsStartupSyncing;
+    LOCK(cs_main);
+    return fIsStartupSyncing;
 }
 
 
@@ -699,32 +697,32 @@ bool IsStandardTx(const CTransaction& tx, string& reason, const int nHeight)
     }
 
     // groth fork
-	const int shieldedTxVersion = ForkManager::getInstance().getShieldedTxVersion(nHeight);
-	bool isGROTHActive = (shieldedTxVersion == GROTH_TX_VERSION);
+    const int shieldedTxVersion = ForkManager::getInstance().getShieldedTxVersion(nHeight);
+    bool isGROTHActive = (shieldedTxVersion == GROTH_TX_VERSION);
 
-	if(!isGROTHActive)
+    if(!isGROTHActive)
     {
         // sidechain fork is after groth one
         assert(!areSidechainsSupported);
 
-		if (tx.nVersion > CTransaction::MAX_OLD_VERSION || tx.nVersion < CTransaction::MIN_OLD_VERSION)
+        if (tx.nVersion > CTransaction::MAX_OLD_VERSION || tx.nVersion < CTransaction::MIN_OLD_VERSION)
         {
-			reason = "version";
-			return false;
-		}
-	}
+            reason = "version";
+            return false;
+        }
+    }
     else
     {
-		if (tx.nVersion != TRANSPARENT_TX_VERSION && tx.nVersion != GROTH_TX_VERSION)
+        if (tx.nVersion != TRANSPARENT_TX_VERSION && tx.nVersion != GROTH_TX_VERSION)
         {
             // check sidechain tx
             if ( !(areSidechainsSupported && (tx.nVersion == sidechainVersion)) )
             {
-			    reason = "version";
-			    return false;
+                reason = "version";
+                return false;
             }
-		}
-	}
+        }
+    }
 
 
     BOOST_FOREACH(const CTxIn& txin, tx.vin)
@@ -960,10 +958,10 @@ bool ContextualCheckTransaction(
         bool (*isInitBlockDownload)())
 {
 
-	//Valid txs are:
-	// at any height
-	// at height < groth_fork v>=1 txs with PHGR proofs
-	// at height >= groth_fork v=-3 shielded with GROTH proofs and v=1 transparent with joinsplit empty
+    //Valid txs are:
+    // at any height
+    // at height < groth_fork v>=1 txs with PHGR proofs
+    // at height >= groth_fork v=-3 shielded with GROTH proofs and v=1 transparent with joinsplit empty
     // at height >= sidechain_fork same as above but also v=-4 with joinsplit empty
 
     // sidechain fork (happens after groth fork)
@@ -975,49 +973,49 @@ bool ContextualCheckTransaction(
     }
 
     // groth fork
-	const int shieldedTxVersion = ForkManager::getInstance().getShieldedTxVersion(nHeight);
-	bool isGROTHActive = (shieldedTxVersion == GROTH_TX_VERSION);
+    const int shieldedTxVersion = ForkManager::getInstance().getShieldedTxVersion(nHeight);
+    bool isGROTHActive = (shieldedTxVersion == GROTH_TX_VERSION);
 
-	if(isGROTHActive)
+    if(isGROTHActive)
     {
-		//verify if transaction is transparent or related to sidechain...
-		if (tx.nVersion == TRANSPARENT_TX_VERSION  ||
+        //verify if transaction is transparent or related to sidechain...
+        if (tx.nVersion == TRANSPARENT_TX_VERSION  ||
             (areSidechainsSupported && (tx.nVersion == sidechainVersion) ) )
         {
-			//enforce empty joinsplit for transparent txs and sidechain tx
-			if(!tx.vjoinsplit.empty()) {
-				return state.DoS(dosLevel, error("ContextualCheckTransaction(): transparent or sc tx but vjoinsplit not empty"),
-									 REJECT_INVALID, "bad-txns-transparent-jsnotempty");
-			}
-			return true;
-		}
+            //enforce empty joinsplit for transparent txs and sidechain tx
+            if(!tx.vjoinsplit.empty()) {
+                return state.DoS(dosLevel, error("ContextualCheckTransaction(): transparent or sc tx but vjoinsplit not empty"),
+                                     REJECT_INVALID, "bad-txns-transparent-jsnotempty");
+            }
+            return true;
+        }
 
         // ... or the actual shielded version
-		if(tx.nVersion != GROTH_TX_VERSION)
+        if(tx.nVersion != GROTH_TX_VERSION)
         {
-			LogPrintf("ContextualCheckTransaction: rejecting (ver=%d) transaction at block height %d - groth_active[%d], sidechain_active[%d]\n",
+            LogPrintf("ContextualCheckTransaction: rejecting (ver=%d) transaction at block height %d - groth_active[%d], sidechain_active[%d]\n",
                 tx.nVersion, nHeight, (int)isGROTHActive, (int)areSidechainsSupported);
-			return state.DoS(dosLevel,
-	                         error("ContextualCheckTransaction(): unexpected tx version"),
-	                         REJECT_INVALID, "bad-tx-version-unexpected");
-		}
-		return true;
-	}
+            return state.DoS(dosLevel,
+                             error("ContextualCheckTransaction(): unexpected tx version"),
+                             REJECT_INVALID, "bad-tx-version-unexpected");
+        }
+        return true;
+    }
     else
     {
         // sidechain fork is after groth one
         assert(!areSidechainsSupported);
 
-		if(tx.nVersion < TRANSPARENT_TX_VERSION)
+        if(tx.nVersion < TRANSPARENT_TX_VERSION)
         {
-			LogPrintf("ContextualCheckTransaction: rejecting (ver=%d) transaction at block height %d - groth_active[%d], sidechain_active[%d]\n",
+            LogPrintf("ContextualCheckTransaction: rejecting (ver=%d) transaction at block height %d - groth_active[%d], sidechain_active[%d]\n",
                 tx.nVersion, nHeight, (int)isGROTHActive, (int)areSidechainsSupported);
-			return state.DoS(0,
-	                         error("ContextualCheckTransaction(): unexpected tx version"),
-	                         REJECT_INVALID, "bad-tx-version-unexpected");
-		}
-		return true;
-	}
+            return state.DoS(0,
+                             error("ContextualCheckTransaction(): unexpected tx version"),
+                             REJECT_INVALID, "bad-tx-version-unexpected");
+        }
+        return true;
+    }
 
 
     return true;
@@ -1056,7 +1054,7 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state,
         }
     }
 
-    if (!Sidechain::ScMgr::checkTxSemanticValidity(tx, state) )
+    if (!Sidechain::checkTxSemanticValidity(tx, state) )
     {
         return false;
     }
@@ -1328,13 +1326,13 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         return false;
     }
 
-    // perform some check related to sidechains state, e.g. creation of an existing scid, fw to
-    // a not existing one and so on
-    if (!scMgr.IsTxApplicableToState(tx) )
-    {
-        return false;
-    }
-    LogPrint("sc", "%s():%d - tx [%s] is applicable\n", __func__, __LINE__, hash.ToString());
+    // If this tx creates a sc, no other tx must be doing the same in the mempool
+    for(const auto& sc: tx.vsc_ccout)
+        if (pool.sidechainExists(sc.scId)) {
+            return state.Invalid(error("transaction tries to create scid already created in mempool"),
+            REJECT_INVALID, "sidechain-creation");
+        } else
+            LogPrint("sc", "%s():%d - tx [%s] has no conflicts in mempool\n", __func__, __LINE__, hash.ToString());
 
     // Check for conflicts with in-memory transactions
     {
@@ -1356,14 +1354,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                 }
             }
         }
-
-        // beside the check performed in IsTxApplicableToState above, perform some more checks specific to mempool. 
-        // If this tx creates a sc, no other tx must be doing the same in the mempool
-        if (!scMgr.IsTxAllowedInMempool(pool, tx, state) )
-        {
-            return false;
-        }
-        LogPrint("sc", "%s():%d - tx [%s] has no conflicts in mempool\n", __func__, __LINE__, hash.ToString());
     }
 
     {
@@ -1382,7 +1372,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                 LogPrint("mempool", "Dropping txid %s : already have coins\n", hash.ToString());
                 return false;
             }
- 
+
             // do all inputs exist?
             // Note that this does not check for the presence of actual outputs (see the next check for that),
             // and only helps with filling in pfMissingInputs (to determine missing vs spent).
@@ -1405,6 +1395,13 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                 LogPrintf("%s():%d - tx[%s]\n", __func__, __LINE__, tx.GetHash().ToString());
                 return state.Invalid(error("AcceptToMemoryPool: inputs already spent"),
                                      REJECT_DUPLICATE, "bad-txns-inputs-spent");
+            }
+
+            // are the sidechains dependencies available?
+            if (!view.HaveDependencies(tx))
+            {
+                return state.Invalid(error("AcceptToMemoryPool: sidechain is redeclared or coins are forwarded to unknown sidechain"),
+                                    REJECT_INVALID, "bad-sc-tx");
             }
  
             // are the joinsplit's requirements met?
@@ -2168,7 +2165,7 @@ static bool ApplyTxInUndo(const CTxInUndo& undo, CCoinsViewCache& view, const CO
 }
 
 bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view,
-    bool* pfClean, Sidechain::ScCoinsViewCache* scView)
+    bool* pfClean)
 {
     assert(pindex->GetBlockHash() == view.GetBestBlock());
 
@@ -2187,14 +2184,11 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
     if (blockUndo.vtxundo.size() + 1 != block.vtx.size())
         return error("DisconnectBlock(): block and undo data inconsistent");
 
-    if (scView)
+    LogPrint("sc", "%s():%d - restoring sc coins if any\n", __func__, __LINE__);
+    if (!view.RestoreImmatureBalances(pindex->nHeight, blockUndo) )
     {
-        LogPrint("sc", "%s():%d - restoring sc coins if any\n", __func__, __LINE__);
-        if (!scView->RestoreImmatureBalances(pindex->nHeight, blockUndo) )
-        {
-            LogPrint("sc", "%s():%d - ERROR updating sc maturity amounts\n", __func__, __LINE__);
-            return error("DisconnectBlock(): sc and undo data inconsistent");
-        }
+        LogPrint("sc", "%s():%d - ERROR updating sc maturity amounts\n", __func__, __LINE__);
+        return error("DisconnectBlock(): sc and undo data inconsistent");
     }
 
     // undo transactions in reverse order
@@ -2229,14 +2223,11 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
             }
         }
 
-        if (scView)
+        LogPrint("sc", "%s():%d - undo sc outputs if any\n", __func__, __LINE__);
+        if (!view.RevertTxOutputs(tx, pindex->nHeight) )
         {
-            LogPrint("sc", "%s():%d - undo sc outputs if any\n", __func__, __LINE__);
-            if (!scView->RevertTxOutputs(tx, pindex->nHeight) )
-            {
-                LogPrint("sc", "%s():%d - ERROR undoing sc creation\n", __func__, __LINE__);
-                return error("DisconnectBlock(): sc creation can not be reverted: data inconsistent");
-            }
+            LogPrint("sc", "%s():%d - ERROR undoing sc creation\n", __func__, __LINE__);
+            return error("DisconnectBlock(): sc creation can not be reverted: data inconsistent");
         }
 
         // restore inputs
@@ -2413,7 +2404,7 @@ static int64_t nTimeCallbacks = 0;
 static int64_t nTimeTotal = 0;
 
 bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex, CCoinsViewCache& view,
-    const CChain& chain, Sidechain::ScCoinsViewCache& scView, bool fJustCheck)
+    const CChain& chain, bool fJustCheck)
 {
     const CChainParams& chainparams = Params();
     AssertLockHeld(cs_main);
@@ -2511,12 +2502,16 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             return state.DoS(100, error("ConnectBlock(): too many sigops"),
                              REJECT_INVALID, "bad-blk-sigops");
 
+        if (!view.HaveInputs(tx))
+            return state.DoS(100, error("ConnectBlock(): inputs missing/spent"),
+                             REJECT_INVALID, "bad-txns-inputs-missingorspent");
+
+        if (!view.HaveDependencies(tx))
+            return state.Invalid(error("ConnectBlock: sidechain is redeclared or coins are forwarded to unknown sidechain"),
+                                        REJECT_INVALID, "bad-sc-tx");
+
         if (!tx.IsCoinBase())
         {
-            if (!view.HaveInputs(tx))
-                return state.DoS(100, error("ConnectBlock(): inputs missing/spent"),
-                                 REJECT_INVALID, "bad-txns-inputs-missingorspent");
-
             // are the JoinSplit's requirements met?
             if (!view.HaveJoinSplitRequirements(tx))
                 return state.DoS(100, error("ConnectBlock(): JoinSplit requirements not met"),
@@ -2538,15 +2533,6 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
             control.Add(vChecks);
         }
 
-        // perform some check related to sidechains state, e.g. creation of an existing scid, fw to
-        // a not existing one and so on
-        if (!scView.IsTxApplicableToState(tx))
-        {
-            LogPrint("sc", "%s():%d - ERROR: tx=%s\n", __func__, __LINE__, tx.GetHash().ToString() );
-            return state.DoS(100, error("ConnectBlock(): invalid sc transaction tx[%s]", tx.GetHash().ToString()),
-                             REJECT_INVALID, "bad-sc-tx");
-        }
-
         CTxUndo undoDummy;
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
@@ -2555,9 +2541,9 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
         if (!fJustCheck && i > 0)
         {
-            if (!scView.UpdateScInfo(tx, block, pindex->nHeight) )
+            if (!view.UpdateScInfo(tx, block, pindex->nHeight) )
             {
-                return state.DoS(100, error("ConnectBlock(): could not add sidechain in scView: tx[%s]", tx.GetHash().ToString()),
+                return state.DoS(100, error("ConnectBlock(): could not add sidechain in view: tx[%s]", tx.GetHash().ToString()),
                                  REJECT_INVALID, "bad-sc-tx");
             }
         }
@@ -2576,7 +2562,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     if (!fJustCheck)
     {
-        if (!scView.ApplyMatureBalances(pindex->nHeight, blockundo) )
+        if (!view.ApplyMatureBalances(pindex->nHeight, blockundo) )
         {
             return state.DoS(100, error("ConnectBlock(): could not update sc immature amounts"),
                              REJECT_INVALID, "bad-sc-amounts");
@@ -2779,9 +2765,9 @@ void static UpdateTip(CBlockIndex *pindexNew) {
     mempool.AddTransactionsUpdated(1);
 
     double syncProgress = Checkpoints::GuessVerificationProgress(chainParams.Checkpoints(), chainActive.Tip());
-	if(fIsStartupSyncing && std::abs(1.0 - syncProgress) < 0.000001) {
-    	LogPrintf("Fully synchronized at block height %d\n", chainActive.Height());
-    	fIsStartupSyncing = false;
+    if(fIsStartupSyncing && std::abs(1.0 - syncProgress) < 0.000001) {
+        LogPrintf("Fully synchronized at block height %d\n", chainActive.Height());
+        fIsStartupSyncing = false;
     }
 
     LogPrintf("%s: new best=%s  height=%d  log2_work=%.8g  tx=%lu  date=%s progress=%f  cache=%.1fMiB(%utx)\n", __func__,
@@ -2847,11 +2833,9 @@ bool static DisconnectTip(CValidationState &state) {
     int64_t nStart = GetTimeMicros();
     {
         CCoinsViewCache view(pcoinsTip);
-        Sidechain::ScCoinsViewCache scView(Sidechain::ScMgr::instance());
-        if (!DisconnectBlock(block, state, pindexDelete, view, NULL, &scView))
+        if (!DisconnectBlock(block, state, pindexDelete, view, NULL))
             return error("DisconnectTip(): DisconnectBlock %s failed", pindexDelete->GetBlockHash().ToString());
         assert(view.Flush());
-        assert(scView.Flush());
     }
     LogPrint("bench", "- Disconnect block: %.2fms\n", (GetTimeMicros() - nStart) * 0.001);
     uint256 anchorAfterDisconnect = pcoinsTip->GetBestAnchor();
@@ -2925,9 +2909,8 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
     LogPrint("bench", "  - Load block from disk: %.2fms [%.2fs]\n", (nTime2 - nTime1) * 0.001, nTimeReadFromDisk * 0.000001);
     {
         CCoinsViewCache view(pcoinsTip);
-        Sidechain::ScCoinsViewCache scView(Sidechain::ScMgr::instance());
         static const bool JUST_CHECK_FALSE = false;
-        bool rv = ConnectBlock(*pblock, state, pindexNew, view, chainActive, scView, JUST_CHECK_FALSE);
+        bool rv = ConnectBlock(*pblock, state, pindexNew, view, chainActive, JUST_CHECK_FALSE);
         GetMainSignals().BlockChecked(*pblock, state);
         if (!rv) {
             if (state.IsInvalid())
@@ -2938,7 +2921,6 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         LogPrint("bench", "  - Connect total: %.2fms [%.2fs]\n", (nTime3 - nTime2) * 0.001, nTimeConnectTotal * 0.000001);
         assert(view.Flush());
-        assert(scView.Flush());
     }
     int64_t nTime4 = GetTimeMicros(); nTimeFlush += nTime4 - nTime3;
     LogPrint("bench", "  - Flush: %.2fms [%.2fs]\n", (nTime4 - nTime3) * 0.001, nTimeFlush * 0.000001);
@@ -3409,7 +3391,7 @@ CBlockIndex* AddToBlockIndex(const CBlockHeader& block)
         pindexNew->nChainDelay = 0 ;
     }
     if(pindexNew->nChainDelay != 0) {
-    	LogPrintf("%s: Block belong to a chain under punishment Delay VAL: %i BLOCKHEIGHT: %d\n",__func__, pindexNew->nChainDelay,pindexNew->nHeight);
+        LogPrintf("%s: Block belong to a chain under punishment Delay VAL: %i BLOCKHEIGHT: %d\n",__func__, pindexNew->nChainDelay,pindexNew->nHeight);
     }
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == NULL || (pindexBestHeader->nChainWork < pindexNew->nChainWork && pindexNew->nChainDelay==0))
@@ -3959,7 +3941,6 @@ bool TestBlockValidity(CValidationState &state, const CBlock& block, CBlockIndex
     assert(pindexPrev == chainActive.Tip());
 
     CCoinsViewCache viewNew(pcoinsTip);
-    Sidechain::ScCoinsViewCache fakeScView(Sidechain::ScMgr::instance());
     CBlockIndex indexDummy(block);
     indexDummy.pprev = pindexPrev;
     indexDummy.nHeight = pindexPrev->nHeight + 1;
@@ -3975,7 +3956,7 @@ bool TestBlockValidity(CValidationState &state, const CBlock& block, CBlockIndex
         return false;
 
     static const bool JUST_CHECK_TRUE = true;
-    if (!ConnectBlock(block, state, &indexDummy, viewNew, chainActive, fakeScView, JUST_CHECK_TRUE))
+    if (!ConnectBlock(block, state, &indexDummy, viewNew, chainActive, JUST_CHECK_TRUE))
         return false;
     assert(state.IsValid());
 
@@ -4316,7 +4297,6 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
     nCheckLevel = std::max(0, std::min(4, nCheckLevel));
     LogPrintf("Verifying last %i blocks at level %i\n", nCheckDepth, nCheckLevel);
     CCoinsViewCache coins(coinsview);
-    Sidechain::ScCoinsViewCache scView(Sidechain::ScMgr::instance());
     CBlockIndex* pindexState = chainActive.Tip();
     CBlockIndex* pindexFailure = NULL;
     int nGoodTransactions = 0;
@@ -4348,7 +4328,7 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
         // check level 3: check for inconsistencies during memory-only disconnect of tip blocks
         if (nCheckLevel >= 3 && pindex == pindexState && (coins.DynamicMemoryUsage() + pcoinsTip->DynamicMemoryUsage()) <= nCoinCacheUsage) {
             bool fClean = true;
-            if (!DisconnectBlock(block, state, pindex, coins, &fClean, &scView))
+            if (!DisconnectBlock(block, state, pindex, coins, &fClean))
                 return error("VerifyDB(): *** irrecoverable inconsistency in block data at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
             pindexState = pindex->pprev;
             if (!fClean) {
@@ -4379,7 +4359,7 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
                 return error("VerifyDB(): *** ReadBlockFromDisk failed at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
             chainHistorical.SetHeight(pindex->nHeight - 1);
             static const bool JUST_CHECK_FALSE = false;
-            if (!ConnectBlock(block, state, pindex, coins, chainHistorical, scView, JUST_CHECK_FALSE))
+            if (!ConnectBlock(block, state, pindex, coins, chainHistorical, JUST_CHECK_FALSE))
                 return error("VerifyDB(): *** found unconnectable block at %d, hash=%s", pindex->nHeight, pindex->GetBlockHash().ToString());
         }
     }
@@ -6997,28 +6977,10 @@ static int getInitCbhSafeDepth()
     return Params().CbhSafeDepth();
 }
 
-static int getInitScCoinsMaturity()
-{
-    if ( (Params().NetworkIDString() == "regtest") )
-    {
-        int val = (int)(GetArg("-sccoinsmaturity", Params().ScCoinsMaturity() ));
-        LogPrint("sc", "%s():%d - %s: using val %d \n", __func__, __LINE__, Params().NetworkIDString(), val);
-        return val;
-    }
-    return Params().ScCoinsMaturity();
-}
-
 int getCheckBlockAtHeightSafeDepth()
 {
     // gets constructed just one time
     static int retVal( getInitCbhSafeDepth() );
-    return retVal;
-}
-
-int getScCoinsMaturity()
-{
-    // gets constructed just one time
-    static int retVal( getInitScCoinsMaturity() );
     return retVal;
 }
 

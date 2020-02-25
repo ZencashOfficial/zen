@@ -78,6 +78,14 @@ public:
     size_t DynamicMemoryUsage() const { return 0; }
 };
 
+struct CSidechainMemPoolEntry
+{
+    uint256 scCreationTxHash;
+    std::set<uint256> fwdTransfersSet;
+    // Note: if a tx sends multiple fwd founds to a sidechain, its hash is registered only once
+    // Upon removal we will need to guard against potential double deletes.
+};
+
 /**
  * CTxMemPool stores valid-according-to-the-current-best-chain
  * transactions that may be included in the next block.
@@ -100,9 +108,10 @@ private:
 
 public:
     mutable CCriticalSection cs;
-    std::map<uint256, CTxMemPoolEntry> mapTx;
-    std::map<COutPoint, CInPoint> mapNextTx;
-    std::map<uint256, const CTransaction*> mapNullifiers;
+    std::map<uint256, CTxMemPoolEntry>             mapTx;
+    std::map<COutPoint, CInPoint>                  mapNextTx;
+    std::map<uint256, CSidechainMemPoolEntry>      mapSidechains;
+    std::map<uint256, const CTransaction*>         mapNullifiers;
     std::map<uint256, std::pair<double, CAmount> > mapDeltas;
 
     CTxMemPool(const CFeeRate& _minRelayFee);
@@ -118,7 +127,7 @@ public:
     void setSanityCheck(bool _fSanityCheck) { fSanityCheck = _fSanityCheck; }
 
     bool addUnchecked(const uint256& hash, const CTxMemPoolEntry &entry, bool fCurrentEstimate = true);
-    void remove(const CTransaction &tx, std::list<CTransaction>& removed, bool fRecursive = false);
+    void remove(const CTransaction &tx, std::list<CTransaction>& removed, bool fRecursive = false, bool removeDependantFwds = true);
     void removeWithAnchor(const uint256 &invalidRoot);
     void removeCoinbaseSpends(const CCoinsViewCache *pcoins, unsigned int nMemPoolHeight);
     void removeConflicts(const CTransaction &tx, std::list<CTransaction>& removed);
@@ -158,6 +167,12 @@ public:
         return (mapTx.count(hash) != 0);
     }
 
+    bool sidechainExists(uint256 scId) const
+    {
+        LOCK(cs);
+        return (mapSidechains.count(scId) != 0) && (!mapSidechains.at(scId).scCreationTxHash.IsNull());
+    }
+
     bool lookup(uint256 hash, CTransaction& result) const;
 
     /** Estimate fee rate needed to get into the next nBlocks */
@@ -187,6 +202,8 @@ public:
     bool GetNullifier(const uint256 &txid) const;
     bool GetCoins(const uint256 &txid, CCoins &coins) const;
     bool HaveCoins(const uint256 &txid) const;
+    bool GetScInfo(const uint256& scId, ScInfo& info) const;
+    bool HaveScInfo(const uint256& scId) const;
 };
 
 #endif // BITCOIN_TXMEMPOOL_H

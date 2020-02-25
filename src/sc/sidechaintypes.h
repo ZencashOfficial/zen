@@ -12,26 +12,8 @@
 #include <boost/variant.hpp>
 
 //------------------------------------------------------------------------------------
-class CTxForwardTransferOut;
-
 namespace Sidechain
 {
-
-typedef boost::unordered_map<uint256, CAmount, ObjectHasher> ScAmountMap;
-
-// useful in sc rpc command for getting genesis info
-typedef struct sPowRelatedData_tag
-{
-    uint32_t a;
-    uint32_t b;
-    ADD_SERIALIZE_METHODS;
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
-        READWRITE(a);
-        READWRITE(b);
-    }
-} ScPowRelatedData;
-
 typedef struct sCreationParameters_tag
 {
     int withdrawalEpochLength; 
@@ -51,6 +33,19 @@ typedef struct sCreationParameters_tag
     }
     inline bool operator!=(const sCreationParameters_tag& rhs) const { return !(*this == rhs); }
 } ScCreationParameters;
+
+// useful in sc rpc command for getting genesis info
+typedef struct sPowRelatedData_tag
+{
+    uint32_t a;
+    uint32_t b;
+    ADD_SERIALIZE_METHODS;
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(a);
+        READWRITE(b);
+    }
+} ScPowRelatedData;
 
 struct CRecipientCrossChainBase
 {
