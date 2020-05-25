@@ -29,7 +29,7 @@ namespace http = boost::beast::http;
 namespace net = boost::asio;
 net::io_context ioc;
 
-static int MAX_BLOCKS_REQUEST = 50;
+static int MAX_BLOCKS_REQUEST = 100;
 static int tot_connections = 0;
 
 class WsNotificationInterface;
@@ -317,7 +317,7 @@ private:
         }
 
         std::list<CBlockIndex*> listBlock;
-        CBlockIndex* pblockindexStart;
+        CBlockIndex* pblockindexStart = NULL;
         int lastH = 0;
         for (const UniValue& o : hashes.getValues())
         {
@@ -334,12 +334,14 @@ private:
                 if (mi != mapBlockIndex.end())
                 {
                     pblockindex = (*mi).second;
+                    if (!chainActive.Contains(pblockindex))
+                        pblockindex = NULL;
                 }
             }
             if (pblockindex == NULL)
             {
-                LogPrint("ws", "%s():%d - block index not found for hash[%s]\n", __func__, __LINE__, o.get_str());
-                return INVALID_PARAMETER;
+                LogPrint("ws", "%s():%d - block index not found for hash[%s], skipping it\n", __func__, __LINE__, o.get_str());
+                continue;
             }
             if (pblockindex->nHeight > lastH)
             {
@@ -347,13 +349,12 @@ private:
                 pblockindexStart = pblockindex;
             }
         }
-        listBlock.push_back(pblockindexStart);
         {
             LOCK(cs_main);
-            CBlockIndex* nextBlock = chainActive.Next(pblockindexStart);
+            CBlockIndex* nextBlock = pblockindexStart;
             if (nextBlock == NULL)
             {
-                LogPrint("ws", "%s():%d - next block index not found\n", __func__, __LINE__);
+                LogPrint("ws", "%s():%d - start block index not found\n", __func__, __LINE__);
                 return INVALID_PARAMETER;
             }
             int n = 0;

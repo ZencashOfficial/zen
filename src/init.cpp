@@ -66,7 +66,6 @@
 #include "librustzcash.h"
 
 #include "zen/websocket_server.h"
-#include "sc/sidechain.h"
 
 using namespace std;
 
@@ -467,7 +466,7 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-flushwallet", strprintf("Run a thread to flush wallet periodically (default: %u)", 1));
         strUsage += HelpMessageOpt("-stopafterblockimport", strprintf("Stop running after importing blocks from disk (default: %u)", 0));
     }
-    string debugCategories = "addrman, alert, bench, coindb, db, estimatefee, fork, http, libevent, lock, mempool, net, partitioncheck, pow, proxy, prune, "
+    string debugCategories = "addrman, alert, bench, cert, coindb, db, estimatefee, fork, http, libevent, lock, mempool, net, partitioncheck, pow, proxy, prune, "
                              "rand, reindex, rpc, sc, selectcoins, tor, ws, zmq, zrpc, zrpcunsafe (implies zrpc)"; // Don't translate these
     strUsage += HelpMessageOpt("-debug=<category>", strprintf(_("Output debugging information (default: %u, supplying <category> is optional)"), 0) + ". " +
         _("If <category> is not supplied or if <category> = 1, output all debugging information.") + " " + _("<category> can be:") + " " + debugCategories + ".");
@@ -1414,8 +1413,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     int64_t nTotalCache = (GetArg("-dbcache", nDefaultDbCache) << 20);
     nTotalCache = std::max(nTotalCache, nMinDbCache << 20); // total cache cannot be less than nMinDbCache
     nTotalCache = std::min(nTotalCache, nMaxDbCache << 20); // total cache cannot be greated than nMaxDbcache
-    int64_t nSideChainDBCache = nTotalCache / 32;
-    nTotalCache -= nSideChainDBCache;
     int64_t nBlockTreeDBCache = nTotalCache / 8;
     if (nBlockTreeDBCache > (1 << 21) && !GetBoolArg("-txindex", false))
         nBlockTreeDBCache = (1 << 21); // block tree db cache shouldn't be larger than 2 MiB
@@ -1427,7 +1424,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     LogPrintf("* Using %.1fMiB for block index database\n", nBlockTreeDBCache * (1.0 / 1024 / 1024));
     LogPrintf("* Using %.1fMiB for chain state database\n", nCoinDBCache * (1.0 / 1024 / 1024));
     LogPrintf("* Using %.1fMiB for in-memory UTXO set\n", nCoinCacheUsage * (1.0 / 1024 / 1024));
-    LogPrintf("* Using %.1fMiB for sidechain database\n", nSideChainDBCache * (1.0 / 1024 / 1024));
 
     bool fLoaded = false;
     while (!fLoaded) {
@@ -1459,13 +1455,6 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
 
                 if (!LoadBlockIndex()) {
                     strLoadError = _("Error loading block database");
-                    break;
-                }
-
-                // open sidechain db, read data and populate memory objects
-                if (!Sidechain::ScMgr::instance().initPersistence((size_t)nSideChainDBCache, fReindex) )
-                {
-                    strLoadError = _("Error loading sidechain database");
                     break;
                 }
 
@@ -1558,7 +1547,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     } else {
 
         // needed to restore wallet transaction meta data after -zapwallettxes
-        std::vector<CWalletTx> vWtx;
+        std::vector<std::shared_ptr<CWalletObjBase>> vWtx;
 
         if (GetBoolArg("-zapwallettxes", false)) {
             uiInterface.InitMessage(_("Zapping all transactions from wallet..."));
@@ -1673,14 +1662,14 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
             {
                 CWalletDB walletdb(strWalletFile);
 
-                BOOST_FOREACH(const CWalletTx& wtxOld, vWtx)
+                for(const auto& wtxOld: vWtx)
                 {
-                    uint256 hash = wtxOld.GetHash();
-                    std::map<uint256, CWalletTx>::iterator mi = pwalletMain->mapWallet.find(hash);
-                    if (mi != pwalletMain->mapWallet.end())
+                    uint256 hash = wtxOld->GetHash();
+                    auto mi = pwalletMain->getMapWallet().find(hash);
+                    if (mi != pwalletMain->getMapWallet().end())
                     {
-                        const CWalletTx* copyFrom = &wtxOld;
-                        CWalletTx* copyTo = &mi->second;
+                        const auto* copyFrom = wtxOld.get();
+                        CWalletObjBase* copyTo = mi->second.get();
                         copyTo->mapValue = copyFrom->mapValue;
                         copyTo->vOrderForm = copyFrom->vOrderForm;
                         copyTo->nTimeReceived = copyFrom->nTimeReceived;
@@ -1776,7 +1765,7 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     LogPrintf("nBestHeight = %d\n",                   chainActive.Height());
 #ifdef ENABLE_WALLET
     LogPrintf("setKeyPool.size() = %u\n",      pwalletMain ? pwalletMain->setKeyPool.size() : 0);
-    LogPrintf("mapWallet.size() = %u\n",       pwalletMain ? pwalletMain->mapWallet.size() : 0);
+    LogPrintf("mapWallet.size() = %u\n",       pwalletMain ? pwalletMain->getMapWallet().size() : 0);
     LogPrintf("mapAddressBook.size() = %u\n",  pwalletMain ? pwalletMain->mapAddressBook.size() : 0);
 #endif
 

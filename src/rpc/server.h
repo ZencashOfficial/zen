@@ -223,6 +223,8 @@ extern UniValue createmultisig(const UniValue& params, bool fHelp);
 extern UniValue listreceivedbyaddress(const UniValue& params, bool fHelp);
 extern UniValue listreceivedbyaccount(const UniValue& params, bool fHelp);
 extern UniValue listtransactions(const UniValue& params, bool fHelp);
+extern UniValue listtxesbyaddress(const UniValue& params, bool fHelp);
+extern UniValue getunconfirmedtxdata(const UniValue& params, bool fHelp);
 extern UniValue listaddressgroupings(const UniValue& params, bool fHelp);
 extern UniValue listaccounts(const UniValue& params, bool fHelp);
 extern UniValue listsinceblock(const UniValue& params, bool fHelp);
@@ -246,15 +248,20 @@ extern UniValue zc_raw_joinsplit(const UniValue& params, bool fHelp);
 extern UniValue zc_raw_receive(const UniValue& params, bool fHelp);
 extern UniValue zc_sample_joinsplit(const UniValue& params, bool fHelp);
 extern UniValue getrawtransaction(const UniValue& params, bool fHelp); // in rcprawtransaction.cpp
+extern UniValue getrawcertificate(const UniValue& params, bool fHelp); // in rcprawtransaction.cpp
 extern UniValue listunspent(const UniValue& params, bool fHelp);
 extern UniValue lockunspent(const UniValue& params, bool fHelp);
 extern UniValue listlockunspent(const UniValue& params, bool fHelp);
 extern UniValue createrawtransaction(const UniValue& params, bool fHelp);
 extern UniValue decoderawtransaction(const UniValue& params, bool fHelp);
+extern UniValue createrawcertificate(const UniValue& params, bool fHelp);
+extern UniValue decoderawcertificate(const UniValue& params, bool fHelp);
 extern UniValue decodescript(const UniValue& params, bool fHelp);
 extern UniValue fundrawtransaction(const UniValue& params, bool fHelp);
 extern UniValue signrawtransaction(const UniValue& params, bool fHelp);
 extern UniValue sendrawtransaction(const UniValue& params, bool fHelp);
+extern UniValue signrawcertificate(const UniValue& params, bool fHelp);
+extern UniValue sendrawcertificate(const UniValue& params, bool fHelp);
 extern UniValue gettxoutproof(const UniValue& params, bool fHelp);
 extern UniValue verifytxoutproof(const UniValue& params, bool fHelp);
 
@@ -290,11 +297,14 @@ extern UniValue z_listreceivedbyaddress(const UniValue& params, bool fHelp); // 
 extern UniValue z_getbalance(const UniValue& params, bool fHelp); // in rpcwallet.cpp
 extern UniValue z_gettotalbalance(const UniValue& params, bool fHelp); // in rpcwallet.cpp
 extern UniValue z_sendmany(const UniValue& params, bool fHelp); // in rpcwallet.cpp
+extern UniValue send_certificate(const UniValue& params, bool fHelp);
 extern UniValue sc_send(const UniValue& params, bool fHelp);
 extern UniValue sc_sendmany(const UniValue& params, bool fHelp); // in rpcwallet.cpp
 extern UniValue sc_certlock(const UniValue& params, bool fHelp);
 extern UniValue sc_certlock_many(const UniValue& params, bool fHelp); // in rpcwallet.cpp
 extern UniValue sc_create(const UniValue& params, bool fHelp); // in rpcwallet.cpp
+extern UniValue create_sidechain(const UniValue& params, bool fHelp); // in rpcwallet.cpp
+extern UniValue send_to_sidechain(const UniValue& params, bool fHelp); // in rpcwallet.cpp
 extern UniValue getscinfo(const UniValue& params, bool fHelp); 
 extern UniValue getscgenesisinfo(const UniValue& params, bool fHelp); 
 extern UniValue z_shieldcoinbase(const UniValue& params, bool fHelp); // in rpcwallet.cpp

@@ -59,9 +59,25 @@ public:
 	inline virtual int getSidechainTxVersion() const { return 0; }
 
     /**
+	 * @brief returns sidechain cert version based on block height, if sidechains are not supported return 0
+	 */
+	inline virtual int getCertificateVersion() const { return 0; }
+
+    /**
 	 * @brief returns true sidechains are supported based on block height, false otherwise
 	 */
 	inline virtual bool areSidechainsSupported() const { return false; }
+
+    /**
+	 * @brief returns supported new block version based on block height
+	 */
+	inline virtual int getNewBlockVersion() const { return BLOCK_VERSION_ORIGINAL; }
+
+    /**
+     * @brief returns true if the nVersion is valid at input block height
+     */
+    inline virtual bool isValidBlockVersion(int nVersion) const { return (nVersion >= BLOCK_VERSION_ORIGINAL); }
+
 };
 
 }

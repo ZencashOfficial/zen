@@ -81,9 +81,24 @@ public:
 	int getSidechainTxVersion(int height) const;
 
     /**
+	 * @brief returns sidechain cert version based on block height
+	 */
+	int getCertificateVersion(int height) const;
+
+    /**
 	 * @brief returns true sidechains are supported based on block height, false otherwise
 	 */
 	bool areSidechainsSupported(int height) const;
+
+    /**
+	 * @brief returns new block version based on block height
+	 */
+	int getNewBlockVersion(int height) const;
+
+    /**
+	 * @brief returns true is the nVersion is valid at input block height
+	 */
+    bool isValidBlockVersion(int height, int nVersion) const;
 
 private:
     

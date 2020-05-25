@@ -122,11 +122,35 @@ int ForkManager::getSidechainTxVersion(int height) const {
 }
 
 /**
+ * @param height height to test against
+ * @return returns sidechain cert version based on block height
+ */
+int ForkManager::getCertificateVersion(int height) const {
+    return getForkAtHeight(height)->getCertificateVersion();
+}
+
+/**
  * @brief returns true sidechains are supported based on block height, false otherwise
  * @return true if allowed, false otherwise
  */
 bool ForkManager::areSidechainsSupported(int height) const {
     return getForkAtHeight(height)->areSidechainsSupported();
+}
+
+/**
+ * @param height height to test against
+ * @return returns new block version based on block height
+ */
+int ForkManager::getNewBlockVersion(int height) const {
+    return getForkAtHeight(height)->getNewBlockVersion();
+}
+
+/**
+ * @param height height to test against
+ * @return returns true if the nVersion is valid at input block height
+ */
+bool ForkManager::isValidBlockVersion(int height, int nVersion) const {
+    return getForkAtHeight(height)->isValidBlockVersion(nVersion);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

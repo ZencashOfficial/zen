@@ -50,8 +50,6 @@ public:
         consensus.nPowMaxAdjustUp = 16; // 16% adjustment up
         consensus.nPowTargetSpacing = 2.5 * 60;
 //        consensus.fPowAllowMinDifficultyBlocks = false;
-        consensus.nRuleChangeActivationThreshold = 1916; // 95% of 2016
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
 
         /**
          * ZEN Network Magic Start Value
@@ -136,6 +134,7 @@ public:
         nCbhMinimumAge = 99;
         nCbhSafeDepth = 52596;
         nScCoinsMaturity = 10;
+        nScMinWithdrawalEpochLength = 100;
 
         checkpointData = (Checkpoints::CCheckpointData) {
             boost::assign::map_list_of
@@ -176,8 +175,6 @@ public:
         consensus.powLimit = uint256S("07ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         assert(maxUint/UintToArith256(consensus.powLimit) >= consensus.nPowAveragingWindow);
 //        consensus.fPowAllowMinDifficultyBlocks = true;
-        consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
 
         pchMessageStart[0] = 0xbf;
         pchMessageStart[1] = 0xf2;
@@ -234,6 +231,7 @@ public:
         nCbhMinimumAge = 99;
         nCbhSafeDepth = 52596;
         nScCoinsMaturity = 10;
+        nScMinWithdrawalEpochLength = 100;
 
         checkpointData = (Checkpoints::CCheckpointData) {
             boost::assign::map_list_of
@@ -272,8 +270,6 @@ public:
         assert(maxUint/UintToArith256(consensus.powLimit) >= consensus.nPowAveragingWindow);
         consensus.nPowMaxAdjustDown = 0; // Turn off adjustment down
         consensus.nPowMaxAdjustUp = 0; // Turn off adjustment up
-        consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
-        consensus.nMinerConfirmationWindow = 144; // Faster than normal for regtest (144 instead of 2016)
 
         pchMessageStart[0] = 0x2f;
         pchMessageStart[1] = 0x54;
@@ -310,6 +306,7 @@ public:
         nCbhMinimumAge = 99;
         nCbhSafeDepth = 320;
         nScCoinsMaturity = 3;
+        nScMinWithdrawalEpochLength = 2;
 
         checkpointData = (Checkpoints::CCheckpointData){
             boost::assign::map_list_of

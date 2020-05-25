@@ -19,15 +19,15 @@ class FakeCoinsViewDB : public CCoinsView {
 public:
     FakeCoinsViewDB() {}
 
-    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const {
+    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const override {
         return false;
     }
 
-    bool GetNullifier(const uint256 &nf) const {
+    bool GetNullifier(const uint256 &nf) const override {
         return false;
     }
 
-    bool GetCoins(const uint256 &txid, CCoins &coins) const {
+    bool GetCoins(const uint256 &txid, CCoins &coins) const override {
         CTxOut txOut;
         txOut.nValue = 4288035;
         CCoins newCoins;
@@ -38,16 +38,16 @@ public:
         return true;
     }
 
-    bool HaveCoins(const uint256 &txid) const {
+    bool HaveCoins(const uint256 &txid) const override {
         return true;
     }
 
-    uint256 GetBestBlock() const {
+    uint256 GetBestBlock() const override {
         uint256 a;
         return a;
     }
 
-    uint256 GetBestAnchor() const {
+    uint256 GetBestAnchor() const override {
         uint256 a;
         return a;
     }
@@ -56,11 +56,14 @@ public:
                     const uint256 &hashBlock,
                     const uint256 &hashAnchor,
                     CAnchorsMap &mapAnchors,
-                    CNullifiersMap &mapNullifiers) {
+                    CNullifiersMap &mapNullifiers,
+                    CSidechainsMap& mapSidechains,
+                    CCeasingScsMap& mapCeasedScs) override
+    {
         return false;
     }
 
-    bool GetStats(CCoinsStats &stats) const {
+    bool GetStats(CCoinsStats &stats) const override {
         return false;
     }
 };
@@ -92,7 +95,7 @@ TEST(Mempool, PriorityStatsDoNotCrash) {
     // Check it does not crash (ie. the death test fails)
     EXPECT_NONFATAL_FAILURE(EXPECT_DEATH(testPool.addUnchecked(tx.GetHash(), entry), ""), "");
 
-    EXPECT_EQ(dPriority, MAX_PRIORITY);
+    EXPECT_EQ(dPriority, MAXIMUM_PRIORITY);
 }
 
 TEST(Mempool, TxInputLimit) {

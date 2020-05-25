@@ -18,8 +18,11 @@
 #include <boost/foreach.hpp>
 #include <boost/unordered_map.hpp>
 #include "zcash/IncrementalMerkleTree.hpp"
+#include <sc/sidechain.h>
 
-/** 
+class CBlockUndo;
+
+/**
  * Pruned version of CTransaction: only retains metadata and unspent transaction outputs
  *
  * Serialized format:
@@ -28,7 +31,8 @@
  * - unspentness bitvector, for vout[2] and further; least significant byte first
  * - the non-spent CTxOuts (via CTxOutCompressor)
  * - VARINT(nHeight)
- *
+ * - string(originSc);                  serialized for coins from certificates only
+ * - unsigned int(changeOutputCounter); serialized for coins from certificates only
  * The nCode value consists of:
  * - bit 1: IsCoinBase()
  * - bit 2: vout[0] is not spent
@@ -36,6 +40,11 @@
  * - The higher bits encode N, the number of non-zero bytes in the following bitvector.
  *   - In case both bit 2 and bit 4 are unset, they encode N-1, as there must be at
  *     least one non-spent output).
+ * - changeOutputCounteris introduced with certificates. It counts the number of vouts which do not
+ *   originate from a backward transfer. It uniquely specifies which vouts come
+ *   from backward transfers since we assume these vout are placed last, before all of other vouts.
+ *   changeOutputCounter is serialized for coins coming from certificates only, along with originScid,
+ *   in order to preserve backward compatibility
  *
  * Example: 0104835800816115944e077fe7c803cfa57f29b36bf87c1d358bb85e
  *          <><><--------------------------------------------><---->
@@ -87,71 +96,47 @@ public:
     //! as new tx version will probably only be introduced at certain heights
     int nVersion;
 
-    void FromTx(const CTransaction &tx, int nHeightIn) {
-        fCoinBase = tx.IsCoinBase();
-        vout = tx.vout;
-        nHeight = nHeightIn;
-        nVersion = tx.nVersion;
-        ClearUnspendable();
-    }
+    //! if coin comes from a bwt, originScId will contain the associated ScId; otherwise it will be null
+    //! originScId will be serialized only for coins from bwt, which will be stored in chainstate db under different key
+    uint256 originScId;
 
-    //! construct a CCoins from a CTransaction, at a given height
-    CCoins(const CTransaction &tx, int nHeightIn) {
-        FromTx(tx, nHeightIn);
-    }
-
-    void Clear() {
-        fCoinBase = false;
-        std::vector<CTxOut>().swap(vout);
-        nHeight = 0;
-        nVersion = 0;
-    }
+    std::string ToString() const;
 
     //! empty constructor
-    CCoins() : fCoinBase(false), vout(0), nHeight(0), nVersion(0) { }
+    CCoins();
+
+    //! construct a CCoins from a CTransaction, at a given height
+    CCoins(const CTransactionBase &tx, int nHeightIn);
+
+    void FromTx(const CTransactionBase &tx, int nHeightIn);
+
+    void Clear();
 
     //!remove spent outputs at the end of vout
-    void Cleanup() {
-        while (vout.size() > 0 && vout.back().IsNull())
-            vout.pop_back();
-        if (vout.empty())
-            std::vector<CTxOut>().swap(vout);
-    }
+    void Cleanup();
 
-    void ClearUnspendable() {
-        BOOST_FOREACH(CTxOut &txout, vout) {
-            if (txout.scriptPubKey.IsUnspendable())
-                txout.SetNull();
-        }
-        Cleanup();
-    }
+    void ClearUnspendable();
 
-    void swap(CCoins &to) {
-        std::swap(to.fCoinBase, fCoinBase);
-        to.vout.swap(vout);
-        std::swap(to.nHeight, nHeight);
-        std::swap(to.nVersion, nVersion);
-    }
+    void swap(CCoins &to);
 
     //! equality test
-    friend bool operator==(const CCoins &a, const CCoins &b) {
-         // Empty CCoins objects are always equal.
-         if (a.IsPruned() && b.IsPruned())
-             return true;
-         return a.fCoinBase == b.fCoinBase &&
-                a.nHeight == b.nHeight &&
-                a.nVersion == b.nVersion &&
-                a.vout == b.vout;
-    }
-    friend bool operator!=(const CCoins &a, const CCoins &b) {
-        return !(a == b);
-    }
+    friend bool operator==(const CCoins &a, const CCoins &b);
+    friend bool operator!=(const CCoins &a, const CCoins &b);
 
-    void CalcMaskSize(unsigned int &nBytes, unsigned int &nNonzeroBytes) const;
+    bool IsCoinBase() const;
+    bool IsFromCert() const;
 
-    bool IsCoinBase() const {
-        return fCoinBase;
-    }
+    //! mark a vout spent
+    bool Spend(uint32_t nPos);
+
+    //! check whether a particular output is still available
+    bool IsAvailable(unsigned int nPos) const;
+
+    //! check whether the entire CCoins is spent
+    //! note that only !IsPruned() CCoins can be serialized
+    bool IsPruned() const;
+
+    size_t DynamicMemoryUsage() const;
 
     unsigned int GetSerializeSize(int nType, int nVersion) const {
         unsigned int nSize = 0;
@@ -173,6 +158,22 @@ public:
                 nSize += ::GetSerializeSize(CTxOutCompressor(REF(vout[i])), nType, nVersion);
         // height
         nSize += ::GetSerializeSize(VARINT(nHeight), nType, nVersion);
+
+        if (this->IsFromCert()) {
+            nSize += ::GetSerializeSize(originScId,      nType,nVersion);
+
+            unsigned int changeOutputCounter = 0;
+            for(const CTxOut& out: vout) {
+                if (!out.isFromBackwardTransfer)
+                    ++changeOutputCounter;
+                else
+                    break;
+            }
+
+            nSize += ::GetSerializeSize(changeOutputCounter,nType,nVersion);
+        }
+
+
         return nSize;
     }
 
@@ -201,8 +202,23 @@ public:
             if (!vout[i].IsNull())
                 ::Serialize(s, CTxOutCompressor(REF(vout[i])), nType, nVersion);
         }
+
         // coinbase height
         ::Serialize(s, VARINT(nHeight), nType, nVersion);
+
+        if (this->IsFromCert()) {
+            ::Serialize(s,originScId,      nType,nVersion);
+
+            unsigned int changeOutputCounter = 0;
+            for(const CTxOut& out: vout) {
+                if (!out.isFromBackwardTransfer)
+                    ++changeOutputCounter;
+                else
+                    break;
+            }
+
+            ::Serialize(s,changeOutputCounter,nType,nVersion);
+        }
     }
 
     template<typename Stream>
@@ -236,33 +252,24 @@ public:
         }
         // coinbase height
         ::Unserialize(s, VARINT(nHeight), nType, nVersion);
+
+        unsigned int changeOutputCounter = vout.size();
+        if (this->IsFromCert()) {
+            ::Unserialize(s, originScId,       nType,nVersion);
+            ::Unserialize(s, changeOutputCounter, nType,nVersion);
+        }
+
+        for(unsigned int idx = 0; idx < vout.size(); ++idx)
+            if ( idx < changeOutputCounter)
+                vout[idx].isFromBackwardTransfer = false;
+            else
+                vout[idx].isFromBackwardTransfer = true;
+
+
         Cleanup();
     }
-
-    //! mark a vout spent
-    bool Spend(uint32_t nPos);
-
-    //! check whether a particular output is still available
-    bool IsAvailable(unsigned int nPos) const {
-        return (nPos < vout.size() && !vout[nPos].IsNull());
-    }
-
-    //! check whether the entire CCoins is spent
-    //! note that only !IsPruned() CCoins can be serialized
-    bool IsPruned() const {
-        BOOST_FOREACH(const CTxOut &out, vout)
-            if (!out.IsNull())
-                return false;
-        return true;
-    }
-
-    size_t DynamicMemoryUsage() const {
-        size_t ret = memusage::DynamicUsage(vout);
-        BOOST_FOREACH(const CTxOut &out, vout) {
-            ret += RecursiveDynamicUsage(out.scriptPubKey);
-        }
-        return ret;
-    }
+private:
+    void CalcMaskSize(unsigned int &nBytes, unsigned int &nNonzeroBytes) const;
 };
 
 class CCoinsKeyHasher
@@ -296,6 +303,36 @@ struct CCoinsCacheEntry
     CCoinsCacheEntry() : coins(), flags(0) {}
 };
 
+struct CSidechainsCacheEntry
+{
+    CSidechain scInfo; // The actual cached data.
+
+    enum class Flags {
+        DEFAULT = 0,
+        DIRTY   = (1 << 0), // This cache entry is potentially different from the version in the parent view.
+        FRESH   = (1 << 1), // The parent view does not have this entry
+        ERASED  = (1 << 2), // The parent view does have this entry but current one have it erased
+    } flag;
+
+    CSidechainsCacheEntry() : scInfo(), flag(Flags::DEFAULT) {}
+    CSidechainsCacheEntry(const CSidechain & _scInfo, Flags _flag) : scInfo(_scInfo), flag(_flag) {}
+};
+
+struct CCeasingScsCacheEntry
+{
+    CCeasingSidechains ceasingScs; // The actual cached data.
+
+    enum class Flags {
+        DEFAULT = 0,
+        DIRTY   = (1 << 0), // This cache entry is potentially different from the version in the parent view.
+        FRESH   = (1 << 1), // The parent view does not have this entry
+        ERASED  = (1 << 2), // The parent view does have this entry but current one have it erased
+    } flag;
+
+    CCeasingScsCacheEntry() : ceasingScs(), flag(Flags::DEFAULT) {}
+    CCeasingScsCacheEntry(const CCeasingSidechains & _scList, Flags _flag) : ceasingScs(_scList), flag(_flag) {}
+};
+
 struct CAnchorsCacheEntry
 {
     bool entered; // This will be false if the anchor is removed from the cache
@@ -321,8 +358,10 @@ struct CNullifiersCacheEntry
     CNullifiersCacheEntry() : entered(false), flags(0) {}
 };
 
-typedef boost::unordered_map<uint256, CCoinsCacheEntry, CCoinsKeyHasher> CCoinsMap;
-typedef boost::unordered_map<uint256, CAnchorsCacheEntry, CCoinsKeyHasher> CAnchorsMap;
+typedef boost::unordered_map<uint256, CCoinsCacheEntry, CCoinsKeyHasher>      CCoinsMap;
+typedef boost::unordered_map<uint256, CSidechainsCacheEntry, CCoinsKeyHasher> CSidechainsMap;
+typedef boost::unordered_map<int, CCeasingScsCacheEntry>                      CCeasingScsMap;
+typedef boost::unordered_map<uint256, CAnchorsCacheEntry, CCoinsKeyHasher>    CAnchorsMap;
 typedef boost::unordered_map<uint256, CNullifiersCacheEntry, CCoinsKeyHasher> CNullifiersMap;
 
 struct CCoinsStats
@@ -356,6 +395,24 @@ public:
     //! This may (but cannot always) return true for fully spent transactions
     virtual bool HaveCoins(const uint256 &txid) const;
 
+    //! Just check whether we have data for a given sidechain id.
+    virtual bool HaveSidechain(const uint256& scId) const;
+
+    //! Retrieve the Sidechain informations for a give sidechain id.
+    virtual bool GetSidechain(const uint256& scId, CSidechain& info) const;
+
+    //! Just check whether we have ceasing sidechains at given height
+    virtual bool HaveCeasingScs(int height) const;
+
+    //! Retrieve the scId list of sidechain ceasing at given height.
+    virtual bool GetCeasingScs(int height, CCeasingSidechains& ceasingScs) const;
+
+    //! Retrieve all the known sidechain ids
+    virtual void queryScIds(std::set<uint256>& scIdsList) const;
+
+    //! just check whether we have data for a certificate in a given epoch for given sidechain
+    virtual bool HaveCertForEpoch(const uint256& scId, int epochNumber) const;
+
     //! Retrieve the block hash whose state this CCoinsView currently represents
     virtual uint256 GetBestBlock() const;
 
@@ -368,7 +425,9 @@ public:
                             const uint256 &hashBlock,
                             const uint256 &hashAnchor,
                             CAnchorsMap &mapAnchors,
-                            CNullifiersMap &mapNullifiers);
+                            CNullifiersMap &mapNullifiers,
+                            CSidechainsMap& mapSidechains,
+                            CCeasingScsMap& mapCeasedScs);
 
     //! Calculate statistics about the unspent transaction output set
     virtual bool GetStats(CCoinsStats &stats) const;
@@ -386,19 +445,27 @@ protected:
 
 public:
     CCoinsViewBacked(CCoinsView *viewIn);
-    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const;
-    bool GetNullifier(const uint256 &nullifier) const;
-    bool GetCoins(const uint256 &txid, CCoins &coins) const;
-    bool HaveCoins(const uint256 &txid) const;
-    uint256 GetBestBlock() const;
-    uint256 GetBestAnchor() const;
+    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const override;
+    bool GetNullifier(const uint256 &nullifier)                        const override;
+    bool GetCoins(const uint256 &txid, CCoins &coins)                  const override;
+    bool HaveCoins(const uint256 &txid)                                const override;
+    bool HaveSidechain(const uint256& scId)                            const override;
+    bool GetSidechain(const uint256& scId, CSidechain& info)           const override;
+    bool HaveCeasingScs(int height)                                    const override;
+    bool GetCeasingScs(int height, CCeasingSidechains& ceasingScs)     const override;
+    void queryScIds(std::set<uint256>& scIdsList)                      const override;
+    bool HaveCertForEpoch(const uint256& scId, int epochNumber)        const override;
+    uint256 GetBestBlock()                                             const override;
+    uint256 GetBestAnchor()                                            const override;
     void SetBackend(CCoinsView &viewIn);
     bool BatchWrite(CCoinsMap &mapCoins,
                     const uint256 &hashBlock,
                     const uint256 &hashAnchor,
                     CAnchorsMap &mapAnchors,
-                    CNullifiersMap &mapNullifiers);
-    bool GetStats(CCoinsStats &stats) const;
+                    CNullifiersMap &mapNullifiers,
+                    CSidechainsMap& mapSidechains,
+                    CCeasingScsMap& mapCeasedScs)                            override;
+    bool GetStats(CCoinsStats &stats)                                  const override;
 };
 
 
@@ -436,10 +503,12 @@ protected:
      * Make mutable so that we can "fill the cache" even from Get-methods
      * declared as "const".  
      */
-    mutable uint256 hashBlock;
-    mutable CCoinsMap cacheCoins;
-    mutable uint256 hashAnchor;
-    mutable CAnchorsMap cacheAnchors;
+    mutable uint256        hashBlock;
+    mutable CCoinsMap      cacheCoins;
+    mutable CSidechainsMap cacheSidechains;
+    mutable CCeasingScsMap cacheCeasingScs;
+    mutable uint256        hashAnchor;
+    mutable CAnchorsMap    cacheAnchors;
     mutable CNullifiersMap cacheNullifiers;
 
     /* Cached dynamic memory usage for the inner CCoins objects. */
@@ -450,18 +519,20 @@ public:
     ~CCoinsViewCache();
 
     // Standard CCoinsView methods
-    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const;
-    bool GetNullifier(const uint256 &nullifier) const;
-    bool GetCoins(const uint256 &txid, CCoins &coins) const;
-    bool HaveCoins(const uint256 &txid) const;
-    uint256 GetBestBlock() const;
-    uint256 GetBestAnchor() const;
+    bool GetAnchorAt(const uint256 &rt, ZCIncrementalMerkleTree &tree) const override;
+    bool GetNullifier(const uint256 &nullifier)                        const override;
+    bool GetCoins(const uint256 &txid, CCoins &coins)                  const override;
+    bool HaveCoins(const uint256 &txid)                                const override;
+    uint256 GetBestBlock()                                             const override;
+    uint256 GetBestAnchor()                                            const override;
     void SetBestBlock(const uint256 &hashBlock);
     bool BatchWrite(CCoinsMap &mapCoins,
                     const uint256 &hashBlock,
                     const uint256 &hashAnchor,
                     CAnchorsMap &mapAnchors,
-                    CNullifiersMap &mapNullifiers);
+                    CNullifiersMap &mapNullifiers,
+                    CSidechainsMap& mapSidechains,
+                    CCeasingScsMap& mapCeasedScs)                            override;
 
 
     // Adds the tree to mapAnchors and sets the current commitment
@@ -494,6 +565,36 @@ public:
      * Failure to call this method before destruction will cause the changes to be forgotten.
      * If false is returned, the state of this cache (and its backing view) will be undefined.
      */
+
+    //SIDECHAIN RELATED PUBLIC MEMBERS
+    bool HaveSidechain(const uint256& scId)                           const override;
+    bool GetSidechain(const uint256 & scId, CSidechain& targetScInfo) const override;
+    void queryScIds(std::set<uint256>& scIdsList)                     const override;
+    bool HaveScRequirements(const CTransaction& tx, int height);
+    bool UpdateScInfo(const CTransaction& tx, const CBlock&, int nHeight);
+    bool RevertTxOutputs(const CTransaction& tx, int nHeight);
+    bool ApplyMatureBalances(int nHeight, CBlockUndo& blockundo);
+    bool RestoreImmatureBalances(int nHeight, const CBlockUndo& blockundo);
+
+    //CERTIFICATES RELATED PUBLIC MEMBERS
+    bool HaveCertForEpoch(const uint256& scId, int epochNumber) const override;
+    bool IsCertApplicableToState(const CScCertificate& cert, int nHeight, CValidationState& state);
+    bool isLegalEpoch(const uint256& scId, int epochNumber, const uint256& epochBlockHash);
+    bool UpdateScInfo(const CScCertificate& cert, CBlockUndo& bu);
+    bool RevertCertOutputs(const CScCertificate& cert);
+
+    //CEASING SIDECHAINS RELATED MEMBERS
+    bool HaveCeasingScs(int height)                                const override;
+    bool GetCeasingScs(int height, CCeasingSidechains& ceasingScs) const override;
+    bool UpdateCeasingScs(const CTxScCreationOut& scCreationOut);
+    bool UndoCeasingScs(const CTxScCreationOut& scCreationOut);
+    bool UpdateCeasingScs(const CScCertificate& cert);
+    bool UndoCeasingScs(const CScCertificate& cert);
+    bool HandleCeasingScs(int height, CBlockUndo& blockUndo);
+    bool RevertCeasingScs(const CTxUndo& ceasedCertUndo);
+
+    CSidechain::state isCeasedAtHeight(const uint256& scId, int height) const;
+
     bool Flush();
 
     //! Calculate the size of the cache (in number of transactions)
@@ -507,28 +608,45 @@ public:
      * Note that lightweight clients may not know anything besides the hash of previous transactions,
      * so may not be able to calculate this.
      *
-     * @param[in] tx	transaction for which we are checking input total
-     * @return	Sum of value of all inputs (scriptSigs)
+     * @param[in] tx    transaction for which we are checking input total
+     * @return    Sum of value of all inputs (scriptSigs)
      */
-    CAmount GetValueIn(const CTransaction& tx) const;
+    CAmount GetValueIn(const CTransactionBase& tx) const;
+
+    //! Verify whether given output is mature according to current view
+    enum class outputMaturity {
+        NOT_APPLICABLE = 0,
+        MATURE,
+        IMMATURE
+    };
+    outputMaturity IsCertOutputMature(const uint256& txHash, unsigned int pos, int spendHeight) const;
 
     //! Check whether all prevouts of the transaction are present in the UTXO set represented by this view
-    bool HaveInputs(const CTransaction& tx) const;
+    bool HaveInputs(const CTransactionBase& txBase) const;
 
     //! Check whether all joinsplit requirements (anchors/nullifiers) are satisfied
-    bool HaveJoinSplitRequirements(const CTransaction& tx) const;
+    bool HaveJoinSplitRequirements(const CTransactionBase& txBase) const;
 
     //! Return priority of tx at height nHeight
-    double GetPriority(const CTransaction &tx, int nHeight) const;
+    double GetPriority(const CTransactionBase &tx, int nHeight) const;
 
     const CTxOut &GetOutputFor(const CTxIn& input) const;
 
     friend class CCoinsModifier;
 
 private:
-    CCoinsMap::iterator FetchCoins(const uint256 &txid);
-    CCoinsMap::const_iterator FetchCoins(const uint256 &txid) const;
+    CCoinsMap::iterator            FetchCoins(const uint256 &txid);
+    CCoinsMap::const_iterator      FetchCoins(const uint256 &txid)      const;
+    CSidechainsMap::const_iterator FetchSidechains(const uint256& scId) const;
+    CCeasingScsMap::const_iterator FetchCeasingScs(int height)          const;
 
+    static int getInitScCoinsMaturity();
+    int getScCoinsMaturity();
+
+    bool DecrementImmatureAmount(const uint256& scId, CSidechain& targetScInfo, CAmount nValue, int maturityHeight);
+    void Dump_info() const;
+
+private:
     /**
      * By making the copy constructor private, we prevent accidentally using it when one intends to create a cache on top of a base cache.
      */

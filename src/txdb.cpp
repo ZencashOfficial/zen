@@ -14,12 +14,16 @@
 #include <stdint.h>
 
 #include <boost/thread.hpp>
+#include <sc/sidechaintypes.h>
+#include "utilmoneystr.h"
 
 using namespace std;
 
 static const char DB_ANCHOR = 'A';
 static const char DB_NULLIFIER = 's';
 static const char DB_COINS = 'c';
+static const char DB_SIDECHAINS = 'i';
+static const char DB_CEASEDSCS = 'd';
 static const char DB_BLOCK_FILES = 'f';
 static const char DB_TXINDEX = 't';
 static const char DB_BLOCK_INDEX = 'b';
@@ -55,6 +59,38 @@ void static BatchWriteCoins(CLevelDBBatch &batch, const uint256 &hash, const CCo
         batch.Erase(make_pair(DB_COINS, hash));
     else
         batch.Write(make_pair(DB_COINS, hash), coins);
+}
+
+void static BatchSidechains(CLevelDBBatch &batch, const uint256 &scId, const CSidechainsCacheEntry &sidechain) {
+    switch (sidechain.flag) {
+        case CSidechainsCacheEntry::Flags::FRESH:
+        case CSidechainsCacheEntry::Flags::DIRTY:
+            batch.Write(make_pair(DB_SIDECHAINS, scId), sidechain.scInfo);
+            break;
+        case CSidechainsCacheEntry::Flags::ERASED:
+            batch.Erase(make_pair(DB_SIDECHAINS, scId));
+            break;
+        case CSidechainsCacheEntry::Flags::DEFAULT:
+        default:
+            break;
+    }
+    return;
+}
+
+void static BatchCeasedScs(CLevelDBBatch &batch, int height, const CCeasingScsCacheEntry &ceasedScs) {
+    switch (ceasedScs.flag) {
+        case CCeasingScsCacheEntry::Flags::FRESH:
+        case CCeasingScsCacheEntry::Flags::DIRTY:
+            batch.Write(make_pair(DB_CEASEDSCS, height), ceasedScs.ceasingScs);
+            break;
+        case CCeasingScsCacheEntry::Flags::ERASED:
+            batch.Erase(make_pair(DB_CEASEDSCS, height));
+            break;
+        case CCeasingScsCacheEntry::Flags::DEFAULT:
+        default:
+            break;
+    }
+    return;
 }
 
 void static BatchWriteHashBestChain(CLevelDBBatch &batch, const uint256 &hash) {
@@ -99,6 +135,49 @@ bool CCoinsViewDB::HaveCoins(const uint256 &txid) const {
     return db.Exists(make_pair(DB_COINS, txid));
 }
 
+bool CCoinsViewDB::GetSidechain(const uint256& scId, CSidechain& info) const
+{
+    return db.Read(std::make_pair(DB_SIDECHAINS, scId), info);
+}
+
+bool CCoinsViewDB::HaveSidechain(const uint256& scId) const
+{
+    return db.Exists(std::make_pair(DB_SIDECHAINS, scId));
+}
+
+bool CCoinsViewDB::HaveCeasingScs(int height) const
+{
+    return db.Exists(std::make_pair(DB_CEASEDSCS, height));
+}
+
+bool CCoinsViewDB::GetCeasingScs(int height, CCeasingSidechains& ceasingScs) const
+{
+    return db.Read(std::make_pair(DB_CEASEDSCS, height), ceasingScs);
+}
+
+void CCoinsViewDB::queryScIds(std::set<uint256>& scIdsList) const
+{
+    std::unique_ptr<leveldb::Iterator> it(const_cast<CLevelDBWrapper*>(&db)->NewIterator());
+    for (it->SeekToFirst(); it->Valid(); it->Next())
+    {
+        boost::this_thread::interruption_point();
+
+        leveldb::Slice slKey = it->key();
+        CDataStream ssKey(slKey.data(), slKey.data()+slKey.size(), SER_DISK, CLIENT_VERSION);
+        char chType;
+        ssKey >> chType;
+        if (chType == DB_SIDECHAINS)
+        {
+            uint256 keyScId;
+            ssKey >> keyScId;
+            scIdsList.insert(keyScId);
+            LogPrint("sc", "%s():%d - scId[%s] added in map\n", __func__, __LINE__, keyScId.ToString() );
+        }
+    }
+
+    return;
+}
+
 uint256 CCoinsViewDB::GetBestBlock() const {
     uint256 hashBestChain;
     if (!db.Read(DB_BEST_BLOCK, hashBestChain))
@@ -117,7 +196,9 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins,
                               const uint256 &hashBlock,
                               const uint256 &hashAnchor,
                               CAnchorsMap &mapAnchors,
-                              CNullifiersMap &mapNullifiers) {
+                              CNullifiersMap &mapNullifiers,
+                              CSidechainsMap& mapSidechains,
+                              CCeasingScsMap& mapCeasedScs) {
     CLevelDBBatch batch;
     size_t count = 0;
     size_t changed = 0;
@@ -147,6 +228,18 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins,
         }
         CNullifiersMap::iterator itOld = it++;
         mapNullifiers.erase(itOld);
+    }
+
+    for (CSidechainsMap::iterator it = mapSidechains.begin(); it != mapSidechains.end();) {
+        BatchSidechains(batch, it->first, it->second);
+        CSidechainsMap::iterator itOld = it++;
+        mapSidechains.erase(itOld);
+    }
+
+    for (CCeasingScsMap::iterator it = mapCeasedScs.begin(); it != mapCeasedScs.end();) {
+        BatchCeasedScs(batch, it->first, it->second);
+        CCeasingScsMap::iterator itOld = it++;
+        mapCeasedScs.erase(itOld);
     }
 
     if (!hashBlock.IsNull())
@@ -220,6 +313,20 @@ bool CCoinsViewDB::GetStats(CCoinsStats &stats) const {
                         nTotalAmount += out.nValue;
                     }
                 }
+
+                if (coins.IsFromCert()) {
+                    ss << coins.originScId;
+
+                    unsigned int changeOutputCounter = 0;
+                    for(const CTxOut& out: coins.vout) {
+                        if (!out.isFromBackwardTransfer)
+                            ++changeOutputCounter;
+                        else
+                            break;
+                    }
+
+                    ss << changeOutputCounter;
+                }
                 stats.nSerializedSize += 32 + slValue.size();
                 ss << VARINT(0);
             }
@@ -235,6 +342,42 @@ bool CCoinsViewDB::GetStats(CCoinsStats &stats) const {
     stats.hashSerialized = ss.GetHash();
     stats.nTotalAmount = nTotalAmount;
     return true;
+}
+
+void CCoinsViewDB::Dump_info()  const
+{
+    // dump leveldb contents on stdout
+    std::unique_ptr<leveldb::Iterator> it(const_cast<CLevelDBWrapper*>(&db)->NewIterator());
+    for (it->SeekToFirst(); it->Valid(); it->Next())
+    {
+        leveldb::Slice slKey = it->key();
+        CDataStream ssKey(slKey.data(), slKey.data()+slKey.size(), SER_DISK, CLIENT_VERSION);
+        char chType;
+        uint256 keyScId;
+        ssKey >> chType;
+        ssKey >> keyScId;
+
+        if (chType == DB_SIDECHAINS)
+        {
+            leveldb::Slice slValue = it->value();
+            CDataStream ssValue(slValue.data(), slValue.data()+slValue.size(), SER_DISK, CLIENT_VERSION);
+            CSidechain info;
+            ssValue >> info;
+
+            std::cout
+                << "scId[" << keyScId.ToString() << "]" << std::endl
+                << "  ==> balance: " << FormatMoney(info.balance) << std::endl
+                << "  creating block hash: " << info.creationBlockHash.ToString() <<
+                   " (height: " << info.creationBlockHeight << ")" << std::endl
+                << "  creating tx hash: " << info.creationTxHash.ToString() << std::endl
+                // creation parameters
+                << "  withdrawalEpochLength: " << info.creationData.withdrawalEpochLength << std::endl;
+        }
+        else
+        {
+            std::cout << "unknown type " << chType << std::endl;
+        }
+    }
 }
 
 bool CBlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*> >& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo) {
@@ -311,7 +454,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
                 pindexNew->nSproutValue   = diskindex.nSproutValue;
-                pindexNew->hashScMerkleRootsMap = diskindex.hashScMerkleRootsMap;
+                pindexNew->hashScTxsCommitment = diskindex.hashScTxsCommitment;
 
                 if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, Params().GetConsensus()))
                     return error("LoadBlockIndex(): CheckProofOfWork failed: %s", pindexNew->ToString());
