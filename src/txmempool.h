@@ -138,7 +138,7 @@ private:
     CBlockPolicyEstimator* minerPolicyEstimator;
 
     uint64_t totalTxSize = 0; //! sum of all mempool tx' byte sizes
-    uint64_t totalCertificateSize = 0; //! sum of all mempool tx' byte sizes
+    uint64_t totalCertificateSize = 0; //! sum of all mempool cert' byte sizes
     uint64_t cachedInnerUsage; //! sum of dynamic memory usage of all the map elements (NOT the maps themselves)
 
     bool addToListForRemovalImmatureExpenditures(
