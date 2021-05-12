@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
 #include "zcash/Address.hpp"
 #include "wallet/wallet.h"
@@ -6,6 +7,24 @@
 #include "util.h"
 
 #include <boost/filesystem.hpp>
+
+
+class MockCWallet : public CWallet
+{
+public:
+    MockCWallet() : CWallet(),
+    csWalletLock(cs_wallet, "cs_wallet", __FILE__, __LINE__)
+    {
+    }
+
+    MockCWallet(const std::string& strWalletFileIn) : CWallet(strWalletFileIn),
+    csWalletLock(cs_wallet, "cs_wallet", __FILE__, __LINE__)
+    {
+    }
+
+private:
+    CCriticalBlock csWalletLock;
+};
 
 /**
  * This test covers methods on CWallet
@@ -17,7 +36,7 @@
 TEST(wallet_zkeys_tests, store_and_load_zkeys) {
     SelectParams(CBaseChainParams::MAIN);
 
-    CWallet wallet;
+    MockCWallet wallet;
 
     // wallet should be empty
     std::set<libzcash::PaymentAddress> addrs;
@@ -75,7 +94,7 @@ TEST(wallet_zkeys_tests, store_and_load_zkeys) {
 TEST(wallet_zkeys_tests, StoreAndLoadViewingKeys) {
     SelectParams(CBaseChainParams::MAIN);
 
-    CWallet wallet;
+    MockCWallet wallet;
 
     // wallet should be empty
     std::set<libzcash::PaymentAddress> addrs;
@@ -127,7 +146,7 @@ TEST(wallet_zkeys_tests, write_zkey_direct_to_db) {
     mapArgs["-datadir"] = pathTemp.string();
 
     bool fFirstRun;
-    CWallet wallet("wallet.dat");
+    MockCWallet wallet("wallet.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet.LoadWallet(fFirstRun));
 
     // No default CPubKey set
@@ -199,7 +218,7 @@ TEST(wallet_zkeys_tests, WriteViewingKeyDirectToDB) {
     mapArgs["-datadir"] = pathTemp.string();
 
     bool fFirstRun;
-    CWallet wallet("wallet-vkey.dat");
+    MockCWallet wallet("wallet-vkey.dat");
     ASSERT_EQ(DB_LOAD_OK, wallet.LoadWallet(fFirstRun));
 
     // No default CPubKey set

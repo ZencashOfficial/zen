@@ -65,7 +65,20 @@ public:
     }
 };
 
-TEST(Mempool, PriorityStatsDoNotCrash) {
+class MemPoolTest: public ::testing::Test
+{
+protected:
+	
+	MemPoolTest()
+        : csMainLock(cs_main, "cs_main", __FILE__, __LINE__)
+	{
+        SelectParams(CBaseChainParams::REGTEST);
+	}
+
+    CCriticalBlock csMainLock;
+};
+
+TEST_F(MemPoolTest, PriorityStatsDoNotCrash) {
     // Test for security issue 2017-04-11.a
     // https://z.cash/blog/security-announcement-2017-04-12.html
 
@@ -95,7 +108,8 @@ TEST(Mempool, PriorityStatsDoNotCrash) {
     EXPECT_EQ(dPriority, MAX_PRIORITY);
 }
 
-TEST(Mempool, TxInputLimit) {
+TEST_F(MemPoolTest, TxInputLimit) {
+
     CTxMemPool pool(::minRelayTxFee);
     bool missingInputs;
 
@@ -142,8 +156,7 @@ TEST(Mempool, TxInputLimit) {
 //TO BE UPDATED WITH OUR TX VERSIONS
 // Valid overwinter v3 format tx gets rejected because overwinter hasn't activated yet.
 /*
-TEST(Mempool, OverwinterNotActiveYet) {
-    SelectParams(CBaseChainParams::REGTEST);
+TEST_F(MemPoolTest, OverwinterNotActiveYet) {
     // UpdateNetworkUpgradeParameters(Consensus::UPGRADE_OVERWINTER, Consensus::NetworkUpgrade::NO_ACTIVATION_HEIGHT);
 
     CTxMemPool pool(::minRelayTxFee);
@@ -168,8 +181,7 @@ TEST(Mempool, OverwinterNotActiveYet) {
 // 1. pass CheckTransaction (and CheckTransactionWithoutProofVerification)
 // 2. fail ContextualCheckTransaction
 // -----------------3. fail IsStandardTx
-TEST(Mempool, SproutV3TxFailsAsExpected) {
-    SelectParams(CBaseChainParams::REGTEST);
+TEST_F(MemPoolTest, SproutV3TxFailsAsExpected) {
 
     CTxMemPool pool(::minRelayTxFee);
     bool missingInputs;
@@ -186,8 +198,7 @@ TEST(Mempool, SproutV3TxFailsAsExpected) {
 
 // transaction version 1 with joinsplit is rejected
 // 1. fail CheckTransaction (and CheckTransactionWithoutProofVerification)
-TEST(Mempool, SproutV3TxWhenGrothNotActive) {
-    SelectParams(CBaseChainParams::REGTEST);
+TEST_F(MemPoolTest, SproutV3TxWhenGrothNotActive) {
 
     CTxMemPool pool(::minRelayTxFee);
     bool missingInputs;
@@ -203,8 +214,7 @@ TEST(Mempool, SproutV3TxWhenGrothNotActive) {
 // Sprout transaction with negative version, rejected by the mempool in CheckTransaction
 // under Sprout consensus rules, should still be rejected under Overwinter consensus rules.
 // 1. fails CheckTransaction (specifically CheckTransactionWithoutProofVerification)
-TEST(Mempool, SproutNegativeVersionTx) {
-    SelectParams(CBaseChainParams::REGTEST);
+TEST_F(MemPoolTest, SproutNegativeVersionTx) {
 
     CTxMemPool pool(::minRelayTxFee);
     bool missingInputs;
