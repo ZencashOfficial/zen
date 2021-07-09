@@ -41,6 +41,7 @@
 
 #include "script/sigcache.h"
 #include "script/standard.h"
+#include <chrono>
 
 using namespace zen;
 
@@ -81,6 +82,7 @@ bool fIsStartupSyncing = true;
 size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
 bool fAlerts = DEFAULT_ALERTS;
+std::chrono::system_clock::time_point startTime = std::chrono::system_clock::now();
 
 /** Fees smaller than this (in satoshi) are considered zero fee (for relaying and mining) */
 CFeeRate minRelayTxFee = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
@@ -2758,6 +2760,7 @@ bool static DisconnectTip(CValidationState &state) {
     BOOST_FOREACH(const CTransaction &tx, block.vtx) {
         SyncWithWallets(tx, NULL);
     }
+    GetMainSignals().MempoolChanged();
     // Update cached incremental witnesses
     GetMainSignals().ChainTip(pindexDelete, &block, newTree, false);
     return true;
@@ -3039,6 +3042,8 @@ bool ActivateBestChain(CValidationState &state, CBlock *pblock) {
             }
 
             // Notify external listeners about the new tip.
+            startTime = std::chrono::system_clock::now();
+
             GetMainSignals().UpdatedBlockTip(pindexNewTip);
             uiInterface.NotifyBlockTip(hashNewTip);
         }
@@ -5569,6 +5574,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
             BOOST_FOREACH(uint256 hash, vEraseQueue)
                 EraseOrphanTx(hash);
+            GetMainSignals().MempoolChanged();
+
         }
         // TODO: currently, prohibit joinsplits from entering mapOrphans
         else if (fMissingInputs && tx.vjoinsplit.size() == 0)

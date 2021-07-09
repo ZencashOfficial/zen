@@ -22,9 +22,14 @@ void RegisterValidationInterface(CValidationInterface* pwalletIn) {
     g_signals.Inventory.connect(boost::bind(&CValidationInterface::Inventory, pwalletIn, _1));
     g_signals.Broadcast.connect(boost::bind(&CValidationInterface::ResendWalletTransactions, pwalletIn, _1));
     g_signals.BlockChecked.connect(boost::bind(&CValidationInterface::BlockChecked, pwalletIn, _1, _2));
+    g_signals.MempoolChanged.connect(boost::bind(&CValidationInterface::MempoolChanged, pwalletIn));
+    g_signals.PeersChanged.connect(boost::bind(&CValidationInterface::PeersChanged, pwalletIn));
+
 }
 
 void UnregisterValidationInterface(CValidationInterface* pwalletIn) {
+    g_signals.PeersChanged.disconnect(boost::bind(&CValidationInterface::PeersChanged, pwalletIn));
+    g_signals.MempoolChanged.disconnect(boost::bind(&CValidationInterface::MempoolChanged, pwalletIn));
     g_signals.BlockChecked.disconnect(boost::bind(&CValidationInterface::BlockChecked, pwalletIn, _1, _2));
     g_signals.Broadcast.disconnect(boost::bind(&CValidationInterface::ResendWalletTransactions, pwalletIn, _1));
     g_signals.Inventory.disconnect(boost::bind(&CValidationInterface::Inventory, pwalletIn, _1));
@@ -34,6 +39,7 @@ void UnregisterValidationInterface(CValidationInterface* pwalletIn) {
     g_signals.EraseTransaction.disconnect(boost::bind(&CValidationInterface::EraseFromWallet, pwalletIn, _1));
     g_signals.SyncTransaction.disconnect(boost::bind(&CValidationInterface::SyncTransaction, pwalletIn, _1, _2));
     g_signals.UpdatedBlockTip.disconnect(boost::bind(&CValidationInterface::UpdatedBlockTip, pwalletIn, _1));
+
 }
 
 void UnregisterAllValidationInterfaces() {
@@ -46,6 +52,9 @@ void UnregisterAllValidationInterfaces() {
     g_signals.EraseTransaction.disconnect_all_slots();
     g_signals.SyncTransaction.disconnect_all_slots();
     g_signals.UpdatedBlockTip.disconnect_all_slots();
+    g_signals.MempoolChanged.disconnect_all_slots();
+    g_signals.PeersChanged.disconnect_all_slots();
+
 }
 
 void SyncWithWallets(const CTransaction &tx, const CBlock *pblock) {
